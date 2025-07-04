@@ -147,3 +147,50 @@ else:  # Checklist Entry
         file_name="checklist_entries.csv",
         mime="text/csv",
     )
+
+import pandas as pd
+import streamlit as st
+
+# ─── NBME Score ─────────────────────────────────────────────────────────────
+st.header("🔖 NBME")
+
+# upload exactly one file
+nbme_file = st.file_uploader(
+    "Upload exactly one NBME CSV",
+    type="csv",
+    accept_multiple_files=False,
+    key="nbme"
+)
+if not nbme_file:
+    st.stop()
+
+# read
+df_nbme = pd.read_csv(nbme_file, dtype=str)
+
+# rename only the nine columns you need
+rename_map_nbme = {
+    "Student":                          "student_nbme",
+    "Email":                            "email_nbme",
+    "Username":                         "username",
+    "Student Level":                    "student_level_nbme",
+    "Location":                         "location_nbme",
+    "Start Date":                       "start_date_nbme",
+    "NBME Exam - Percentage Score":     "nbme",
+    "NBME Exam Grade":                  "grade_nbme",
+    "Final Course Grade":               "final_course_grade",
+}
+
+df_nbme = df_nbme.rename(columns=rename_map_nbme)
+
+# keep only (and in exactly) the columns you renamed
+target_cols = list(rename_map_nbme.values())
+df_nbme = df_nbme[target_cols]
+
+# show and download
+st.dataframe(df_nbme, height=400)
+st.download_button(
+    "📥 Download formatted NBME CSV",
+    df_nbme.to_csv(index=False).encode("utf-8"),
+    file_name="nbme_scores_formatted.csv",
+    mime="text/csv",
+)
