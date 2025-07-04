@@ -61,6 +61,10 @@ if instrument == "OASIS Evaluation":
     rest       = [c for c in master_cols if c not in keep_front]
     df = df.reindex(columns=keep_front + rest)
 
+
+    # 8) remove student & location
+    df = df.drop(columns=["student","location"] #Cannot have these columns in the repeating instrument. 
+                      
     st.dataframe(df, height=400)
     st.download_button(
         "📥 Download formatted OASIS CSV",
