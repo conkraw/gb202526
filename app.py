@@ -45,7 +45,7 @@ if instrument == "OASIS Evaluation":
         "multiple_choice_order","multiple_choice_value","multiple_choice_label"
     ]
     questions = [f"q{i}_{s}" for i in range(1,24) for s in q_sufs]
-    tail = ["oasis_eval_complete","test_complete"]
+    tail = ["oasis_eval_complete"]
     master_cols = front + questions + tail
 
     # reorder (will KeyError if you missed any)
