@@ -148,9 +148,6 @@ else:  # Checklist Entry
         mime="text/csv",
     )
 
-import pandas as pd
-import streamlit as st
-
 # ─── NBME Score ─────────────────────────────────────────────────────────────
 st.header("🔖 NBME")
 
@@ -185,6 +182,10 @@ df_nbme = df_nbme.rename(columns=rename_map_nbme)
 # keep only (and in exactly) the columns you renamed
 target_cols = list(rename_map_nbme.values())
 df_nbme = df_nbme[target_cols]
+
+# add REDCap repeater
+df_nbme["redcap_repeat_instrument"] = "oasis_eval"
+df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
 
 # show and download
 st.dataframe(df_nbme, height=400)
