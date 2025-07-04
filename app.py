@@ -13,27 +13,42 @@ if not uploaded:
 df = pd.read_csv(uploaded, dtype=str)
 
 # 3) Master column list (in the exact order you provided)
-master_cols = [
-    "record_id","course_id","department","course","location","start_date","end_date",
-    "course_type","student","student_username","student_external_id","student_designation",
-    "student_email","student_aamc_id","student_usmle_id","student_gender","student_level",
-    "student_default_classification","evaluator","evaluator_username","evaluator_external_id",
-    "evaluator_email","evaluator_gender","who_completed","evaluation","form_record",
-    "submit_date",
-    # q1
-    "q1_question_number","q1_question_id","q1_question","q1_answer_text",
-    "q1_multiple_choice_order","q1_multiple_choice_value","q1_multiple_choice_label",
-    # q2
-    "q2_question_number","q2_question_id","q2_question","q2_answer_text",
-    "q2_multiple_choice_order","q2_multiple_choice_value","q2_multiple_choice_label",
-    # … repeat up to q23 …
-    # For brevity, you’d continue enumerating q3…q23 exactly as above…
-    # Finally:
-    "oasis_eval_complete","test_complete"
+# fixed “front” columns
+front = [
+    "record_id","course_id","department","course","location",
+    "start_date","end_date","course_type","student","student_username",
+    "student_external_id","student_designation","student_email",
+    "student_aamc_id","student_usmle_id","student_gender","student_level",
+    "student_default_classification","evaluator","evaluator_username",
+    "evaluator_external_id","evaluator_email","evaluator_gender",
+    "who_completed","evaluation","form_record","submit_date"
 ]
 
-# 4) Rename: assume the raw df.columns align 1:1 (otherwise you'll need a mapping dict)
-df.columns = master_cols[: len(df.columns)]
+# the repeating question‐fields
+q_suffixes = [
+    "question_number",
+    "question_id",
+    "question",
+    "answer_text",
+    "multiple_choice_order",
+    "multiple_choice_value",
+    "multiple_choice_label",
+]
+
+# build q1…q23 automatically
+questions = [
+    f"q{i}_{sfx}"
+    for i in range(1, 24)   # 1 through 23
+    for sfx in q_suffixes
+]
+
+# the trailing columns
+tail = ["oasis_eval_complete", "test_complete"]
+
+# combine into your master list
+master_cols = front + questions + tail
+
+df = df[ master_cols ]
 
 # 5) Override record_id with student_external_id
 df["record_id"] = df["student_external_id"]
