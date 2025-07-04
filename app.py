@@ -139,6 +139,8 @@ else:  # Checklist Entry
     df_cl = df_cl[all_cols]
 
     df_cl = df_cl.drop(columns=["email"])
+
+    df_cl = df_cl.rename(columns={"date": "date_97fae7"}) 
     
     st.dataframe(df_cl, height=400)
     st.download_button(
