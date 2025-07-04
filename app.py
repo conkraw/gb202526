@@ -56,10 +56,12 @@ df["record_id"]               = df["student_external_id"]
 df["redcap_repeat_instrument"] = "oasis_eval"
 df["redcap_repeat_instance"]   = df.groupby("record_id").cumcount() + 1
 
-# 7) Move the three key REDCap fields to the front
-final_order = [
-  "record_id","redcap_repeat_instrument","redcap_repeat_instance"
-] + master_cols
+# 7) Move the three key REDCap fields to the front,
+#    but don’t duplicate them from master_cols:
+keep_front = ["record_id", "redcap_repeat_instrument", "redcap_repeat_instance"]
+rest = [c for c in master_cols if c not in keep_front]
+
+final_order = keep_front + rest
 df = df.reindex(columns=final_order)
 
 # 8) Show preview
