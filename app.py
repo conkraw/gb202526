@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 import pandas as pd
 
@@ -12,8 +13,20 @@ if not uploaded:
 # 2) Read as strings
 df = pd.read_csv(uploaded, dtype=str)
 
-# 3) Master column list (in the exact order you provided)
-# fixed “front” columns
+# 3) QUICK HEADER‐CLEANING: "Course ID" → "course_id", "1 Question Number" → "q1_question_number", etc.
+def rename_col(col: str) -> str:
+    col = col.strip()
+    # detect leading question number
+    m = re.match(r"^(\d+)\s+(.+)$", col)
+    if m:
+        num, rest = m.groups()
+        rest = rest.lower().replace(" ", "_")
+        return f"q{num}_{rest}"
+    return col.lower().replace(" ", "_")
+
+df.columns = [rename_col(c) for c in df.columns]
+
+# 4) Build your master list  
 front = [
     "record_id","course_id","department","course","location",
     "start_date","end_date","course_type","student","student_username",
@@ -24,43 +37,30 @@ front = [
     "who_completed","evaluation","form_record","submit_date"
 ]
 
-# the repeating question‐fields
 q_suffixes = [
-    "question_number",
-    "question_id",
-    "question",
-    "answer_text",
-    "multiple_choice_order",
-    "multiple_choice_value",
-    "multiple_choice_label",
+    "question_number","question_id","question","answer_text",
+    "multiple_choice_order","multiple_choice_value","multiple_choice_label"
 ]
+questions = [f"q{i}_{s}" for i in range(1,24) for s in q_suffixes]
 
-# build q1…q23 automatically
-questions = [
-    f"q{i}_{sfx}"
-    for i in range(1, 24)   # 1 through 23
-    for sfx in q_suffixes
-]
+tail = ["oasis_eval_complete","test_complete"]
 
-# the trailing columns
-tail = ["oasis_eval_complete", "test_complete"]
-
-# combine into your master list
 master_cols = front + questions + tail
 
-df = df[ master_cols ]
+# 5) Reorder to exactly your master list (will KeyError if any name is still missing—
+#    you can st.write(set(master_cols)-set(df.columns)) to debug)
+df = df.reindex(columns=master_cols)
 
-# 5) Override record_id with student_external_id
-df["record_id"] = df["student_external_id"]
-
-# 6) Add the REDCap repeat fields
+# 6) Inject REDCap fields
+df["record_id"]               = df["student_external_id"]
 df["redcap_repeat_instrument"] = "oasis_eval"
-df["redcap_repeat_instance"] = df.groupby("record_id").cumcount() + 1
+df["redcap_repeat_instance"]   = df.groupby("record_id").cumcount() + 1
 
-# 7) Final column order: push our three key fields to the front
-front = ["record_id", "redcap_repeat_instrument", "redcap_repeat_instance"]
-rest = [c for c in master_cols if c not in front]
-df = df[ front + rest ]
+# 7) Move the three key REDCap fields to the front
+final_order = [
+  "record_id","redcap_repeat_instrument","redcap_repeat_instance"
+] + master_cols
+df = df.reindex(columns=final_order)
 
 # 8) Show preview
 st.dataframe(df, height=400)
@@ -71,5 +71,5 @@ st.download_button(
     "📥 Download formatted CSV",
     data=csv,
     file_name="oasis_eval_formatted.csv",
-    mime="text/csv"
+    mime="text/csv",
 )
