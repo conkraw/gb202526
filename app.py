@@ -63,7 +63,7 @@ if instrument == "OASIS Evaluation":
 
 
     # 8) remove student & location
-    df = df.drop(columns=["student","location"] #Cannot have these columns in the repeating instrument. 
+    df = df.drop(columns=["student","location"]) #Cannot have these columns in the repeating instrument. 
                       
     st.dataframe(df, height=400)
     st.download_button(
