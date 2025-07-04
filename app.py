@@ -74,7 +74,7 @@ if instrument == "OASIS Evaluation":
     )
 
 
-elif:  # Checklist Entry
+elif instrument == "Checklist Entry":
     st.header("🔖 Checklist Entry Merger")
     uploaded = st.file_uploader(
         "Upload exactly two checklist CSVs",
@@ -150,7 +150,7 @@ elif:  # Checklist Entry
 
 # ─── NBME Score ─────────────────────────────────────────────────────────────
 
-elif:  #NBME
+elif instrument == "NBME Scores":
     st.header("🔖 NBME")
     
     # upload exactly one file
