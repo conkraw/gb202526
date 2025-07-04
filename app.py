@@ -138,6 +138,8 @@ else:  # Checklist Entry
     all_cols += ["redcap_repeat_instrument","redcap_repeat_instance"]
     df_cl = df_cl[all_cols]
 
+    df_cl = df_cl.drop(columns=["email"])
+    
     st.dataframe(df_cl, height=400)
     st.download_button(
         "📥 Download formatted checklist CSV",
