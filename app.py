@@ -171,6 +171,7 @@ elif instrument == "NBME Scores":
         "Student":                        "student_nbme",
         "Email":                          "email_nbme",
         "Username":                       "username",
+        "External ID":                    "record_id",
         "Student Level":                  "student_level_nbme",
         "Location":                       "location_nbme",
         "Start Date":                     "start_date_nbme",
@@ -183,7 +184,12 @@ elif instrument == "NBME Scores":
     # keep only those nine columns, in that order
     df_nbme = df_nbme[list(rename_map_nbme.values())]
 
-        # add REDCap repeater
+    # move external_id → record_id up front
+    df_nbme = df_nbme.rename(columns={"external_id": "record_id"})
+    cols = ["record_id"] + [c for c in df_nbme.columns if c != "record_id"]
+    df_nbme = df_nbme[cols]
+    
+    # add REDCap repeater
     df_nbme["redcap_repeat_instrument"] = "oasis_eval"
     df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
     
