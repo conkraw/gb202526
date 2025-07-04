@@ -8,7 +8,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry"]
+    ["OASIS Evaluation", "Checklist Entry", "NBME Scores"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -74,7 +74,7 @@ if instrument == "OASIS Evaluation":
     )
 
 
-else:  # Checklist Entry
+elif:  # Checklist Entry
     st.header("🔖 Checklist Entry Merger")
     uploaded = st.file_uploader(
         "Upload exactly two checklist CSVs",
@@ -150,7 +150,7 @@ else:  # Checklist Entry
 
 # ─── NBME Score ─────────────────────────────────────────────────────────────
 
-else:  # Checklist Entry
+elif:  #NBME
     st.header("🔖 NBME")
     
     # upload exactly one file
