@@ -53,7 +53,7 @@ if instrument == "OASIS Evaluation":
 
     # inject REDCap fields
     df["record_id"]                = df["student_external_id"]
-    df["redcap_repeat_instrument"] = "oasis_eval"
+    df["redcap_repeat_instrument"] = "OASIS_EVAL"
     df["redcap_repeat_instance"]   = df.groupby("record_id").cumcount() + 1
 
     # final column order
@@ -124,7 +124,7 @@ else:  # Checklist Entry
     df_cl = df_cl[cols]
 
     # add REDCap repeater
-    df_cl["redcap_repeat_instrument"] = "checklist_entry"
+    df_cl["redcap_repeat_instrument"] = "CHECKLIST_ENTRY"
     df_cl["redcap_repeat_instance"]   = df_cl.groupby("record_id").cumcount() + 1
 
     # final order
