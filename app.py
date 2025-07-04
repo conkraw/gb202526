@@ -195,4 +195,3 @@ elif instrument == "NBME Scores":
         file_name="nbme_scores_formatted.csv",
         mime="text/csv",
     )
-    )
