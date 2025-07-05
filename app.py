@@ -438,18 +438,20 @@ elif instrument == "Roster":
     
     # ─── 5) Grade due date: 6 weeks after end_date ──────────────────────────────
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
-    
-    # ─── 6) Normalize all due dates to 23:59 ────────────────────────────────────
+
+    # ─── 6) Normalize all due dates to 23:59 with no seconds ─────────────────
     due_cols = [
         "quiz_due_1","quiz_due_2","quiz_due_3","quiz_due_4",
         "ass_middue_date","ass_due_date",
         "docass_due_date_1","docass_due_date_2",
         "grade_due_date"
     ]
+    
     for col in due_cols:
-        # reset to midnight then add 23h59m
-        df_roster[col] = df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
-
+        df_roster[col] = (
+            df_roster[col].dt.normalize()
+            + pd.Timedelta(hours=23, minutes=59)
+        ).dt.strftime("%Y-%m-%d %H:%M")
 
     # preview + download
     st.dataframe(df_roster, height=400)
