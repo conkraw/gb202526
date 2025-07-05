@@ -439,7 +439,7 @@ elif instrument == "Roster":
     df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], infer_datetime_format=True)
     
     # add 6 weeks
-    df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
+    df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=5)
 
     # preview + download
     st.dataframe(df_roster, height=400)
