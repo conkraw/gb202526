@@ -256,10 +256,22 @@ elif instrument == "Preceptor Matching":
 
     df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
 
+    # ─── normalize manual_evaluations to one per row ────────────────────
+    # split on "|" into lists
+    df_pmx["manual_evaluations"] = df_pmx["manual_evaluations"] \
+        .fillna("") \
+        .str.split("|")
+    
+    # explode so each list element gets its own row
+    df_pmx = df_pmx.explode("manual_evaluations")
+    
+    # remove leading "*" and any extra whitespace
+    df_pmx["manual_evaluations"] = df_pmx["manual_evaluations"] \
+        .str.lstrip("*") \
+        .str.strip()
+
     # get all unique manual_evaluations values
     opts = df_pmx["manual_evaluations"].dropna().unique().tolist()
-
-    st.write(opts)
     
     # multiselect defaulting to all, so you can deselect any you don’t want
     selected = st.multiselect(
