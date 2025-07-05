@@ -256,6 +256,21 @@ elif instrument == "Preceptor Matching":
 
     df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
 
+
+    # get all unique manual_evaluations values
+    opts = df_pmx["manual_evaluations"].dropna().unique().tolist()
+    
+    # multiselect defaulting to all, so you can deselect any you don’t want
+    selected = st.multiselect(
+        "Filter by manual_evaluations:",
+        options=opts,
+        default=opts
+    )
+    
+    # filter the DataFrame to only those values
+    df_pmx = df_pmx[df_pmx["manual_evaluations"].isin(selected)]
+
+
     # preview + download
     st.dataframe(df_pmx, height=400)
     st.download_button(
