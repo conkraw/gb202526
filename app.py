@@ -368,9 +368,9 @@ elif instrument == "Roster":
     cols = ["record_id"] + [c for c in df_roster.columns if c != "record_id"]
     df_roster = df_roster[cols]
 
-    # add REDCap repeater
-    df_roster["redcap_repeat_instrument"] = "roster"
-    df_roster["redcap_repeat_instance"]   = df_roster.groupby("record_id").cumcount() + 1
+    # add REDCap repeater - dont need
+    #df_roster["redcap_repeat_instrument"] = "roster"
+    #df_roster["redcap_repeat_instance"]   = df_roster.groupby("record_id").cumcount() + 1
 
     # ─── split “student” into last_name / first_name ─────────────────────────
     # 1) drop everything after the semicolon
