@@ -384,7 +384,7 @@ elif instrument == "Roster":
 
     df_roster["legal_name"] = df_roster["lastname"] + ", " + df_roster["firstname"] + " (MD)" 
 
-    df_roster["email_2"] = "record_id" + "@psu.edu"
+    df_roster["email_2"] = df_roster["record_id"] + "@psu.edu"
 
     #legal name ... legal_name
     
