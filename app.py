@@ -355,7 +355,7 @@ elif instrument == "Roster":
         "Credits":                        "credits",
         "Enrolled":                       "enrolled",
         "Actions":                        "actions",
-        "Aprv By...":                     "approved_by"
+        "Aprv By":                     "approved_by"
     }
     df_roster = df_roster.rename(columns=rename_map)
 
