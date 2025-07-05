@@ -379,16 +379,11 @@ elif instrument == "Roster":
     df_roster["firstname"] = parts[1].str.strip()
 
     #legal name ... legal_name
-    #psu_id
-    #"track",
-    #"location",
-    #"start_date",
-    #"end_date",
     
     # 3) (optional) drop the original combined column
     renamed_cols_a = ["row_number","student","previous_name","username","confidential","phone","pager","mobile","gender","pronouns","ethnicity","designation","aamc_id","usmle_id","home_school"]
     renamed_cols_b = ["campus","date_of_birth","emergency_contact","emergency_phone","primary_academic_department","secondary_academic_department","academic_type","primary_site","nbme_score"]
-    renamed_cols_c = ["productivity_specialty","grade","status","student_level","location","weeks","credits","enrolled","actions","approved_by"]
+    renamed_cols_c = ["productivity_specialty","grade","status","student_level","weeks","credits","enrolled","actions","approved_by"]
 
     renamed_cols = renamed_cols_a + renamed_cols_b + renamed_cols_c
     
