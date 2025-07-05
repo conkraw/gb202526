@@ -395,13 +395,22 @@ elif instrument == "Roster":
 
     renamed_cols = renamed_cols_a + renamed_cols_b + renamed_cols_c
 
-    # 1) grab each unique start_date
+    # 0) ensure start_date is a true datetime
+    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], infer_datetime_format=True)
+    
+    # 1) grab each unique date, sorted oldest → newest
     unique_dates = sorted(df_roster["start_date"].dropna().unique())
     
     # 2) for each one, make a new column rot_date_#
     for idx, dt in enumerate(unique_dates, 1):
-        df_roster[f"rot_date_{idx}"] = dt
+        df_roster[f"rot_date_{idx}"] = dt.strftime("%Y-%m-%d")
     
+    # 3) build a mapping from date → rotation code
+    rotation_map = {dt: f"R{idx}" for idx, dt in enumerate(unique_dates, 1)}
+    
+    # 4) assign each student’s rotation1 based on their start_date
+    df_roster["rotation1"] = df_roster["start_date"].map(rotation_map)
+
     # 3) now drop your old columns
     df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
 
