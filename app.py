@@ -270,6 +270,10 @@ elif instrument == "Preceptor Matching":
         .str.lstrip("*") \
         .str.strip()
 
+        # ─── drop unwanted categories ───────────────────────────────────────
+    to_drop = ["Clinical Teaching Eval", "Midcycle"]
+    df_pmx = df_pmx[~df_pmx["manual_evaluations"].isin(to_drop)]
+
     # get all unique manual_evaluations values
     opts = df_pmx["manual_evaluations"].dropna().unique().tolist()
     
