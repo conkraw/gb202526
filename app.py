@@ -434,6 +434,13 @@ elif instrument == "Roster":
     df_roster["docass_due_date_1"]  = df_roster["quiz_due_2"]   # 1st doc‐assignment due
     df_roster["docass_due_date_2"]  = df_roster["quiz_due_4"]   # 2nd doc‐assignment due
 
+    # ─── Grade due date: 6 weeks after end_date ────────────────────────────────
+    # ensure end_date is datetime
+    df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], infer_datetime_format=True)
+    
+    # add 6 weeks
+    df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
+
     # preview + download
     st.dataframe(df_roster, height=400)
     
