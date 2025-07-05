@@ -417,11 +417,13 @@ elif instrument == "Roster":
     df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
 
     #due dates
-    offset = (6 - df["start_date"].dt.weekday) % 7
-    first_sunday = df["start_date"] + pd.to_timedelta(offset, unit="D")
+    offset = (6 - df_roster["start_date"].dt.weekday) % 7
+    
+    first_sunday = df_roster["start_date"] + pd.to_timedelta(offset, unit="D")
+    
     # 3) build quiz_due_1 … quiz_due_4
     for n in range(1, 5):
-        df[f"quiz_due_{n}"] = first_sunday + pd.to_timedelta(weeks=(n-1))
+        df_roster[f"quiz_due_{n}"] = first_sunday + pd.to_timedelta(weeks=(n-1))
 
     # preview + download
     st.dataframe(df_roster, height=400)
