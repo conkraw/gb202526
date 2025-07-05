@@ -8,7 +8,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "NBME Scores"]
+    ["OASIS Evaluation", "Checklist Entry", "NBME Scores", "Preceptors Matched"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -201,3 +201,67 @@ elif instrument == "NBME Scores":
         file_name="nbme_scores_formatted.csv",
         mime="text/csv",
     )
+
+elif instrument == "Preceptor Matching":
+    st.header("🔖 Preceptor Matching")
+
+    # upload exactly one CSV
+    preceptor_file = st.file_uploader(
+        "Upload exactly one Preceptor Matching CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="preceptor"
+    )
+    if not preceptor_file:
+        st.stop()
+
+    # read
+    df_pmx = pd.read_csv(preceptor_file, dtype=str)
+
+    # drop the unwanted Delete column
+    if "Delete" in df_pmx.columns:
+        df_pmx = df_pmx.drop(columns=["Delete"])
+
+    # rename only the REDCap-friendly columns
+    rename_map = {
+        "Start Date":                    "start_date",
+        "End Date":                      "end_date",
+        "Location":                      "location",
+        "Faculty Name":                  "faculty_name",
+        "Faculty Username":              "faculty_username",
+        "Faculty External ID":           "faculty_external_id",
+        "Faculty Email":                 "faculty_email",
+        "Type of Association":           "type_of_association",
+        "Student Name":                  "student_name",
+        "Student Username":              "student_username",
+        "Student External ID":           "record_id",
+        "Student Email":                 "student_email",
+        "Evaluation Period Start Date":  "eval_period_start_date",
+        "Evaluation Period End Date":    "eval_period_end_date",
+        "Classification":                "classification",
+        "Student Activity":              "student_activity",
+        "Manual Evaluations":            "manual_evaluations",
+    }
+    df_pmx = df_pmx.rename(columns=rename_map)
+
+    # keep only those columns, in that exact order
+    df_pmx = df_pmx[list(rename_map.values())]
+
+    # move record_id to front
+    df_pmx = df_pmx[["record_id"] + [c for c in df_pmx.columns if c != "record_id"]]
+
+    # add REDCap repeater fields
+    df_pmx["redcap_repeat_instrument"] = "oasis_eval"
+    df_pmx["redcap_repeat_instance"]   = df_pmx.groupby("record_id").cumcount() + 1
+
+    df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
+
+    # preview + download
+    st.dataframe(df_pmx, height=400)
+    st.download_button(
+        "📥 Download formatted Preceptor Matching CSV",
+        df_pmx.to_csv(index=False).encode("utf-8"),
+        file_name="preceptor_matching_formatted.csv",
+        mime="text/csv",
+    )
+
