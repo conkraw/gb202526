@@ -8,7 +8,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "NBME Scores", "Preceptor Matching"]
+    ["OASIS Evaluation", "Checklist Entry", "NBME Scores", "Preceptor Matching", "Roster"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -297,3 +297,108 @@ elif instrument == "Preceptor Matching":
         mime="text/csv",
     )
 
+elif instrument == "Roster":
+    st.header("🔖 Roster")
+
+    # upload exactly one CSV
+    roster_file = st.file_uploader(
+        "Upload exactly one Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster"
+    )
+    if not roster_file:
+        st.stop()
+
+    # read as CSV
+    df_roster = pd.read_csv(roster_file, dtype=str)
+
+    # map your columns to REDCap-friendly names
+    rename_map = {
+        "#":                              "row_number",
+        "Student":                        "student",
+        "Legal Name":                     "legal_name",
+        "Previous Name":                  "previous_name",
+        "Username":                       "username",
+        "Confidential":                   "confidential",
+        "External ID":                    "record_id",
+        "Email Address":                  "email",
+        "Phone":                          "phone",
+        "Pager":                          "pager",
+        "Mobile":                         "mobile",
+        "Gender":                         "gender",
+        "Pronouns":                       "pronouns",
+        "Ethnicity":                      "ethnicity",
+        "Designation":                    "designation",
+        "AAMC ID":                        "aamc_id",
+        "USMLE ID":                       "usmle_id",
+        "Home School":                    "home_school",
+        "Campus":                         "campus",
+        "Date of Birth":                  "date_of_birth",
+        "Emergency Contact":              "emergency_contact",
+        "Emergency Phone":                "emergency_phone",
+        "Primary Academic Department":    "primary_academic_department",
+        "Secondary Academic Department":  "secondary_academic_department",
+        "Academic Type":                  "academic_type",
+        "Primary Site":                   "primary_site",
+        "NBME":                           "nbme_score",
+        "PSU ID":                         "psu_id",
+        "Productivity Specialty":         "productivity_specialty",
+        "Grade":                          "grade",
+        "Status":                         "status",
+        "Student Level":                  "student_level",
+        "Track":                          "track",
+        "Location":                       "location",
+        "Start Date":                     "start_date",
+        "End Date":                       "end_date",
+        "Weeks":                          "weeks",
+        "Credits":                        "credits",
+        "Enrolled":                       "enrolled",
+        "Actions":                        "actions",
+        "Aprv By...":                     "approved_by"
+    }
+    df_roster = df_roster.rename(columns=rename_map)
+
+    # keep only those renamed columns (in this exact order)
+    df_roster = df_roster[list(rename_map.values())]
+
+    # move record_id to the front
+    cols = ["record_id"] + [c for c in df_roster.columns if c != "record_id"]
+    df_roster = df_roster[cols]
+
+    # add REDCap repeater
+    df_roster["redcap_repeat_instrument"] = "roster"
+    df_roster["redcap_repeat_instance"]   = df_roster.groupby("record_id").cumcount() + 1
+
+    # ─── split “student” into last_name / first_name ─────────────────────────
+    # 1) drop everything after the semicolon
+    name_only = df_roster["student"].str.split(";", n=1).str[0]
+    # 2) split on comma into last / first
+    parts = name_only.str.split(",", n=1, expand=True)
+    df_roster["lastname"]  = parts[0].str.strip()
+    df_roster["firstname"] = parts[1].str.strip()
+
+    #legal name ... legal_name
+    #psu_id
+    #"track",
+    #"location",
+    #"start_date",
+    #"end_date",
+    
+    # 3) (optional) drop the original combined column
+    renamed_cols_a = ["row_number","student","previous_name","username","confidential","phone","pager","mobile","gender","pronouns","ethnicity","designation","aamc_id","usmle_id","home_school"]
+    renamed_cols_b = ["campus","date_of_birth","emergency_contact","emergency_phone","primary_academic_department","secondary_academic_department","academic_type","primary_site","nbme_score"]
+    renamed_cols_c = ["productivity_specialty","grade","status","student_level","location","weeks","credits","enrolled","actions","approved_by"]
+
+    renamed_cols = renamed_cols_a + renamed_cols_b + renamed_cols_c
+    
+    df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
+
+    # preview + download
+    st.dataframe(df_roster, height=400)
+    st.download_button(
+        "📥 Download formatted Roster CSV",
+        df_roster.to_csv(index=False).encode("utf-8"),
+        file_name="roster_formatted.csv",
+        mime="text/csv",
+    )
