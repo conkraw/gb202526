@@ -313,6 +313,8 @@ elif instrument == "Roster":
     # read as CSV
     df_roster = pd.read_csv(roster_file, dtype=str)
 
+    df_roster.columns = df_roster.columns.str.strip()
+
     # map your columns to REDCap-friendly names
     rename_map = {
         "#":                              "row_number",
