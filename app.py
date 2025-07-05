@@ -411,6 +411,8 @@ elif instrument == "Roster":
     # 4) assign each student’s rotation1 based on their start_date
     df_roster["rotation1"] = df_roster["start_date"].map(rotation_map)
 
+    df_roster["rotation"] = df_roster["start_date"].map(rotation_map)
+
     # 3) now drop your old columns
     df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
 
