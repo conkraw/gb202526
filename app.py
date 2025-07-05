@@ -394,7 +394,15 @@ elif instrument == "Roster":
     renamed_cols_c = ["productivity_specialty","grade","status","student_level","weeks","credits","enrolled","actions","approved_by"]
 
     renamed_cols = renamed_cols_a + renamed_cols_b + renamed_cols_c
+
+    # 1) grab each unique start_date
+    unique_dates = sorted(df_roster["start_date"].dropna().unique())
     
+    # 2) for each one, make a new column rot_date_#
+    for idx, dt in enumerate(unique_dates, 1):
+        df_roster[f"rot_date_{idx}"] = dt
+    
+    # 3) now drop your old columns
     df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
 
     # preview + download
