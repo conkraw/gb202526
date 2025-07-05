@@ -256,6 +256,7 @@ elif instrument == "Preceptor Matching":
 
     df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
 
+    st.write(opts)
 
     # get all unique manual_evaluations values
     opts = df_pmx["manual_evaluations"].dropna().unique().tolist()
