@@ -271,7 +271,7 @@ elif instrument == "Preceptor Matching":
         .str.strip()
 
         # ─── drop unwanted categories ───────────────────────────────────────
-    to_drop = ["Clinical Teaching Eval", "Midcycle"]
+    to_drop = ["Clinical Teaching Eval", "Mid-Cycle Feedback"]
     df_pmx = df_pmx[~df_pmx["manual_evaluations"].isin(to_drop)]
 
     # get all unique manual_evaluations values
