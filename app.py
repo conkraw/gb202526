@@ -416,30 +416,40 @@ elif instrument == "Roster":
     # 3) now drop your old columns
     df_roster.drop(columns=renamed_cols, errors="ignore", inplace=True)
 
-    #due dates
-    # 1) Ensure start_date is datetime
-    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], infer_datetime_format=True)
+    #DUE DATES
     
-    # 2) Compute days until the first Sunday
+    # ─── 1) Ensure start_date and end_date are datetime ─────────────────────────
+    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], infer_datetime_format=True)
+    df_roster["end_date"]   = pd.to_datetime(df_roster["end_date"], infer_datetime_format=True)
+    
+    # ─── 2) Compute first Sunday on/after start_date ────────────────────────────
     days_to_sunday = (6 - df_roster["start_date"].dt.weekday) % 7
     first_sunday   = df_roster["start_date"] + pd.to_timedelta(days_to_sunday, unit="D")
     
-    # 3) Create quiz_due_1 through quiz_due_4 on df_roster
+    # ─── 3) Create quiz_due_1 … quiz_due_4 ──────────────────────────────────────
     for n in range(1, 5):
         df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
-
-    # 4) Alias the 2nd and 4th Sundays into the assignment/doc-assignment due dates
-    df_roster["ass_middue_date"]    = df_roster["quiz_due_2"]   # middle of assignment
-    df_roster["ass_due_date"]       = df_roster["quiz_due_4"]   # assignment due
-    df_roster["docass_due_date_1"]  = df_roster["quiz_due_2"]   # 1st doc‐assignment due
-    df_roster["docass_due_date_2"]  = df_roster["quiz_due_4"]   # 2nd doc‐assignment due
-
-    # ─── Grade due date: 6 weeks after end_date ────────────────────────────────
-    # ensure end_date is datetime
-    df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], infer_datetime_format=True)
     
-    # add 6 weeks
-    df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=5)
+    # ─── 4) Alias assignment & doc-assignment due dates ─────────────────────────
+    df_roster["ass_middue_date"]   = df_roster["quiz_due_2"]
+    df_roster["ass_due_date"]      = df_roster["quiz_due_4"]
+    df_roster["docass_due_date_1"] = df_roster["quiz_due_2"]
+    df_roster["docass_due_date_2"] = df_roster["quiz_due_4"]
+    
+    # ─── 5) Grade due date: 6 weeks after end_date ──────────────────────────────
+    df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
+    
+    # ─── 6) Normalize all due dates to 23:59 ────────────────────────────────────
+    due_cols = [
+        "quiz_due_1","quiz_due_2","quiz_due_3","quiz_due_4",
+        "ass_middue_date","ass_due_date",
+        "docass_due_date_1","docass_due_date_2",
+        "grade_due_date"
+    ]
+    for col in due_cols:
+        # reset to midnight then add 23h59m
+        df_roster[col] = df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+
 
     # preview + download
     st.dataframe(df_roster, height=400)
