@@ -428,6 +428,12 @@ elif instrument == "Roster":
     for n in range(1, 5):
         df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
 
+    # 4) Alias the 2nd and 4th Sundays into the assignment/doc-assignment due dates
+    df_roster["ass_middue_date"]    = df_roster["quiz_due_2"]   # middle of assignment
+    df_roster["ass_due_date"]       = df_roster["quiz_due_4"]   # assignment due
+    df_roster["docass_due_date_1"]  = df_roster["quiz_due_2"]   # 1st doc‐assignment due
+    df_roster["docass_due_date_2"]  = df_roster["quiz_due_4"]   # 2nd doc‐assignment due
+
     # preview + download
     st.dataframe(df_roster, height=400)
     
