@@ -380,6 +380,12 @@ elif instrument == "Roster":
     df_roster["lastname"]  = parts[0].str.strip()
     df_roster["firstname"] = parts[1].str.strip()
 
+    df_roster["name"] = df_roster["firstname"] + " " + df_roster["lastname"]
+
+    df_roster["legal_name"] = df_roster["lastname"] + ", " + df_roster["firstname"] + " (MD)" 
+
+    df_roster["email_2"] = "record_id" + "@psu.edu"
+
     #legal name ... legal_name
     
     # 3) (optional) drop the original combined column
