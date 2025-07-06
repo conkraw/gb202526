@@ -376,72 +376,59 @@ elif instrument == "Weekly Quiz Reports":
         st.warning("Please upload *exactly* four CSV files here.")
         st.stop()
 
-    # 2) read + concat
-    dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
-    df_quiz = pd.concat(dfs, ignore_index=True, sort=False)
+    # Create an empty DataFrame for combining later
+    df_quiz_combined = pd.DataFrame()
 
-    # 3) Clean the sis_id and create record_id
-    df_quiz["record_id"] = df_quiz["sis_id"].str.replace(r"@psu\.edu", "", regex=True)
+    # 2) Load each file, rename columns, and add to combined DataFrame
+    for week, file in enumerate(uploaded, start=1):
+        df = pd.read_csv(file, dtype=str)
 
-    # 4) rename only the columns you want to send to REDCap
-    rename_map_quiz = {
-        "name":            "student_name",
-        "record_id":       "record_id",  # already cleaned
-        "submitted":       "submitted_date",
-        "attempt":         "attempt_number",
-        "n correct":       "num_correct",
-        "n incorrect":     "num_incorrect",
-        "score":           "quiz_score",
-        # quiz late columns will be added later based on the week number
-    }
-    df_quiz = df_quiz.rename(columns=rename_map_quiz)
+        # Rename the columns (e.g., "submitted_date" to "quiz_1_late", "quiz_2_late", etc.)
+        df.rename(columns={
+            "submitted": f"quiz_{week}_late",
+            "score": f"quiz{week}",
+        }, inplace=True)
 
-    # 5) Select + reorder to exactly those fields
-    df_quiz = df_quiz[list(rename_map_quiz.values())]
-
-    # 6) Remove student_name, attempt_number, num_correct, num_incorrect
-    df_quiz.drop(columns=["student_name", "attempt_number", "num_correct", "num_incorrect"], inplace=True)
-
-    # 7) Calculate quiz score percentage (divide by 20 and multiply by 100)
-    df_quiz["quiz_score"] = pd.to_numeric(df_quiz["quiz_score"], errors='coerce')
-    df_quiz["quiz_score"] = (df_quiz["quiz_score"] / 20) * 100
-
-    # 8) Handle missing scores (if no score exists, leave blank)
-    df_quiz["quiz_score"] = df_quiz["quiz_score"].fillna('')
-
-    # 9) Handle repeated quizzes: take the latest score
-    df_quiz = df_quiz.sort_values(by=["record_id", "submitted_date"], ascending=[True, False])  # Sort by record_id and most recent date
-    df_quiz = df_quiz.drop_duplicates(subset=["record_id"], keep="first")  # Keep the latest score per student
-
-    # 10) Handle quiz late dates (convert from UTC to US/Eastern and set to 23:59)
-    quiz_late_columns = ["quiz_1_late", "quiz_2_late", "quiz_3_late", "quiz_4_late"]
-
-    # Loop through each uploaded file and assign the corresponding late date column
-    for idx, file in enumerate(uploaded, 1):  # Start from Week 1 to Week 4
-        week_quiz_late_column = f"quiz_{idx}_late"
-        
-        # Add the column dynamically for each week (e.g. quiz_1_late, quiz_2_late, etc.)
-        df_quiz[week_quiz_late_column] = pd.to_datetime(df_quiz[week_quiz_late_column], errors='coerce')  # handle invalid dates if any
+        # Convert the date columns to datetime and handle the timezone conversion
+        quiz_late_column = f"quiz_{week}_late"
+        df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
 
         # Convert to UTC if naive and then convert to US/Eastern
-        if df_quiz[week_quiz_late_column].dt.tz is None:
-            df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+        if df[quiz_late_column].dt.tz is None:
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
         else:
-            df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.tz_convert('US/Eastern')
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
 
         # Set time to 23:59 (no seconds)
-        df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+        df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
 
+        # Append to the combined DataFrame (merge by record_id)
+        if df_quiz_combined.empty:
+            df_quiz_combined = df
+        else:
+            df_quiz_combined = pd.merge(df_quiz_combined, df[['record_id', quiz_late_column, f"quiz{week}']], on="record_id", how="outer")
 
-    # 13) Preview + download
-    st.dataframe(df_quiz, height=400)
+    # 3) Calculate quiz score percentage for each quiz
+    for week in range(1, 5):
+        quiz_column = f"quiz{week}"
+        df_quiz_combined[quiz_column] = pd.to_numeric(df_quiz_combined[quiz_column], errors='coerce')
+        df_quiz_combined[quiz_column] = (df_quiz_combined[quiz_column] / 20) * 100
+        df_quiz_combined[quiz_column] = df_quiz_combined[quiz_column].fillna('')
+
+    # 4) Final column ordering (record_id and quiz late columns first, then quiz scores)
+    quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
+    quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
+    final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
+    df_quiz_combined = df_quiz_combined[final_columns]
+
+    # 5) Preview + download
+    st.dataframe(df_quiz_combined, height=400)
     st.download_button(
         "📥 Download formatted Weekly Quiz CSV",
-        df_quiz.to_csv(index=False).encode("utf-8"),
+        df_quiz_combined.to_csv(index=False).encode("utf-8"),
         file_name="weekly_quiz_formatted.csv",
         mime="text/csv",
     )
-
 
 elif instrument == "Roster":
     st.header("🔖 Roster")
