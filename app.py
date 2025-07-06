@@ -359,10 +359,7 @@ elif instrument == "Email Record Mapper":
         file_name="email_roster_dropdown.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-
-import pandas as pd
-import streamlit as st
-
+    
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
 
