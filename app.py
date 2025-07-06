@@ -430,9 +430,23 @@ elif instrument == "Weekly Quiz Reports":
         
         # Set the time to 23:59 (without seconds)
         df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+    
         
-        st.dataframe(df)
+        # Merge this DataFrame with the combined DataFrame based on 'record_id'
+        if df_quiz_combined.empty:
+            df_quiz_combined = df
+        else:
+            # Only merge the relevant columns: record_id, quiz_late_column, and quiz_score_column
+            df_quiz_combined = pd.merge(df_quiz_combined, df[['record_id', quiz_late_column, quiz_score_column]], on="record_id", how="outer")
 
+    # 3) Final column ordering: record_id, quiz late columns, and quiz scores
+    quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
+    quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
+    final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
+    df_quiz_combined = df_quiz_combined[final_columns]
+
+    st.dataframe(df_quiz_combined)
+    
 elif instrument == "Roster":
     st.header("🔖 Roster")
 
