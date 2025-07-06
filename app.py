@@ -449,7 +449,7 @@ elif instrument == "Roster":
     
     for col in due_cols:
         #df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%Y-%m-%d %H:%M")
-        df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
+        df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m/%d/%Y 23:59")
         
     # preview + download
     st.dataframe(df_roster, height=400)
