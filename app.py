@@ -352,9 +352,13 @@ elif instrument == "Email Record Mapper":
     doc_io = BytesIO()
     doc.save(doc_io)
     doc_io.seek(0)
-    
-    # Download button for Word
-    st.download_button(label="📥 Download REDCap Dropdown (Word)",data=doc_io,file_name="email_roster_dropdown.docx",mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+    st.download_button(
+        label="📥 Download REDCap Dropdown (Word)",
+        data=doc_io,
+        file_name="email_roster_dropdown.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
