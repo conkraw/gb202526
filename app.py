@@ -360,6 +360,10 @@ elif instrument == "Email Record Mapper":
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+import pytz
+import pandas as pd
+import streamlit as st
+
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
 
@@ -406,7 +410,9 @@ elif instrument == "Weekly Quiz Reports":
         if df_quiz_combined.empty:
             df_quiz_combined = df
         else:
-            df_quiz_combined = pd.merge(df_quiz_combined, df[['record_id', quiz_late_column, f"quiz{week}']], on="record_id", how="outer")
+            # Use f-string for quiz columns to get the correct column names
+            quiz_column = f"quiz{week}"
+            df_quiz_combined = pd.merge(df_quiz_combined, df[['record_id', quiz_late_column, quiz_column]], on="record_id", how="outer")
 
     # 3) Calculate quiz score percentage for each quiz
     for week in range(1, 5):
