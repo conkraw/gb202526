@@ -334,35 +334,28 @@ elif instrument == "Email Record Mapper":
 
     # Preview and download
     st.dataframe(df_roster, height=400)
+    # Create a Word doc in memory
     doc = Document()
-    doc.add_heading('Mapped Email Roster', level=1)
+    doc.add_heading('REDCap Dropdown: record_id, email', level=1)
     
-    # Add table
-    table = doc.add_table(rows=1, cols=2)
-    table.style = 'Table Grid'
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = 'Record ID'
-    hdr_cells[1].text = 'Email'
-    
-    # Add each row
+    # Add each line as plain text
     for _, row in df_roster.iterrows():
-        cells = table.add_row().cells
-        cells[0].text = str(row['record_id'])
-        cells[1].text = str(row['email'])
+        record_id = str(row['record_id']).strip()
+        email = str(row['email']).strip()
+        doc.add_paragraph(f"{record_id}, {email}")
     
-    # Save Word doc to memory
+    # Save to BytesIO
     doc_io = BytesIO()
     doc.save(doc_io)
     doc_io.seek(0)
     
-    # Streamlit download button for .docx
+    # Download button for Word
     st.download_button(
-        label="📥 Download Mapped Email Roster (Word)",
+        label="📥 Download REDCap Dropdown (Word)",
         data=doc_io,
-        file_name="email_roster_mapped.docx",
+        file_name="email_roster_dropdown.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-
 
 elif instrument == "Roster":
     st.header("🔖 Roster")
