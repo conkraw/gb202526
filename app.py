@@ -601,6 +601,7 @@ elif instrument == "Roster":
         df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
 
     df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
+    df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y")
     
     # preview + download
     st.dataframe(df_roster, height=400)
