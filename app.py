@@ -348,7 +348,7 @@ elif instrument == "Email Record Mapper":
     for _, row in df_roster.iterrows():
         cells = table.add_row().cells
         cells[0].text = str(row['record_id'])
-        cells[1].text = str(row['student_email'])
+        cells[1].text = str(row['email'])
     
     # Save Word doc to memory
     doc_io = BytesIO()
