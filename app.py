@@ -360,10 +360,13 @@ elif instrument == "Email Record Mapper":
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+import pandas as pd
+import streamlit as st
+
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
 
-    # 1) upload exactly four CSVs
+    # 1) Upload exactly four CSVs
     uploaded = st.file_uploader(
         "Upload exactly four Weekly Quiz CSVs",
         type=["csv"],
@@ -376,58 +379,70 @@ elif instrument == "Weekly Quiz Reports":
         st.warning("Please upload *exactly* four CSV files here.")
         st.stop()
 
-    # 2) Create a list to hold DataFrames for each quiz (Week 1 to Week 4)
-    quiz_dfs = []
+    # 2) Create a list to store DataFrames for each week (Week 1 to Week 4)
+    df_quiz_combined = []
 
-    # 3) Process each file separately
-    for week, file in enumerate(uploaded, start=1):
+    # 3) Process each file and assign it to its respective week based on filename
+    for file in uploaded:
+        # Read the CSV file
         df = pd.read_csv(file, dtype=str)
 
-        # 4) Rename columns for each quiz file (e.g., submitted_date → quiz_1_late, quiz_2_late)
+        # Get the week number from the filename
+        week = None
+        if 'week 1' in file.name.lower():
+            week = 1
+        elif 'week 2' in file.name.lower():
+            week = 2
+        elif 'week 3' in file.name.lower():
+            week = 3
+        elif 'week 4' in file.name.lower():
+            week = 4
+
+        # Skip files that don't match a week
+        if week is None:
+            st.warning(f"Skipping file {file.name} because it doesn't match 'Week 1', 'Week 2', 'Week 3', or 'Week 4' in the filename.")
+            continue
+
+        # Rename columns based on the week number (e.g., week 1 becomes quiz_1_late)
         quiz_late_column = f"quiz_{week}_late"
         quiz_score_column = f"quiz{week}"
 
-        # Check if 'submitted' and 'score' columns exist
-        if "submitted" not in df.columns or "score" not in df.columns:
-            st.warning(f"File for Week {week} is missing 'submitted' or 'score' columns.")
-            continue
-
-        # Rename the necessary columns
+        # Rename columns
         df.rename(columns={
             "submitted": quiz_late_column,
             "score": quiz_score_column,
         }, inplace=True)
 
-        # 5) Convert the 'submitted' (quiz late) columns to datetime
+        # Convert the date columns to datetime and handle the timezone conversion
         df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
 
-        # 6) Set the timezone conversion to US/Eastern for the quiz late dates (if needed)
+        # Convert to UTC if naive and then convert to US/Eastern
         if df[quiz_late_column].dt.tz is None:
             df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
         else:
             df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
 
-        # 7) Set time to 23:59 (no seconds)
+        # Set time to 23:59 (no seconds)
         df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
 
-        # 8) Calculate the quiz score percentage (divide by 20 and multiply by 100)
+        # Calculate the quiz score percentage (divide by 20 and multiply by 100)
         df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')
         df[quiz_score_column] = (df[quiz_score_column] / 20) * 100
         df[quiz_score_column] = df[quiz_score_column].fillna('')
 
-        # 9) Append the individual DataFrame for each quiz
-        quiz_dfs.append(df)
+        # Add this DataFrame to the combined list
+        df_quiz_combined.append(df)
 
-    # 10) Combine the DataFrames for all quizzes (Week 1 to Week 4) vertically
-    df_quiz_combined = pd.concat(quiz_dfs, ignore_index=True, sort=False)
+    # 4) Combine the DataFrames for all quizzes (Week 1 to Week 4)
+    df_quiz_combined = pd.concat(df_quiz_combined, ignore_index=True, sort=False)
 
-    # 11) Final column ordering: record_id, quiz late dates, and quiz scores
+    # 5) Final column ordering: record_id, quiz late columns, and quiz scores
     quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
     quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
     final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
     df_quiz_combined = df_quiz_combined[final_columns]
 
-    # 12) Preview + download
+    # 6) Preview + download
     st.dataframe(df_quiz_combined, height=400)
     st.download_button(
         "📥 Download formatted Weekly Quiz CSV",
