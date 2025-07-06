@@ -315,8 +315,8 @@ elif instrument == "Email Record Mapper":
 
     # Rename only the needed columns
     rename_map = {
-        "Student Email":      "email",
-        "Student External ID": "record_id",
+        "Email Address": "email",
+        "External ID": "record_id",
     }
     df_roster = df_roster.rename(columns=rename_map)
 
