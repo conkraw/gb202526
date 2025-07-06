@@ -360,10 +360,6 @@ elif instrument == "Email Record Mapper":
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-import pytz
-import pandas as pd
-import streamlit as st
-
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
 
