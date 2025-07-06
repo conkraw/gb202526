@@ -418,8 +418,6 @@ elif instrument == "Weekly Quiz Reports":
         
         st.dataframe(df)
 
-    
-
 elif instrument == "Roster":
     st.header("🔖 Roster")
 
