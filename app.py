@@ -543,7 +543,8 @@ elif instrument == "Roster":
     renamed_cols = renamed_cols_a + renamed_cols_b + renamed_cols_c
 
     # 0) ensure start_date is a true datetime
-    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], infer_datetime_format=True)
+    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], errors='coerce')
+    df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
     
     # 1) grab each unique date, sorted oldest → newest
     unique_dates = sorted(df_roster["start_date"].dropna().unique())
