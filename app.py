@@ -3,6 +3,10 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from docx import Document
+import pytz
+import pandas as pd
+import streamlit as st
+
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
 st.title("🔄 REDCap Instruments Formatter")
@@ -10,7 +14,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster"]
+    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster", "Weekly Quiz Reports"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -351,10 +355,6 @@ elif instrument == "Email Record Mapper":
     
     # Download button for Word
     st.download_button(label="📥 Download REDCap Dropdown (Word)",data=doc_io,file_name="email_roster_dropdown.docx",mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-import pytz
-import pandas as pd
-import streamlit as st
 
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
