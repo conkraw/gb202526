@@ -414,10 +414,11 @@ elif instrument == "Weekly Quiz Reports":
             "score": quiz_score_column,
         }, inplace=True)
 
-
-
         # Rename 'sis_id' to 'record_id' and drop '@psu.edu'
         df['record_id'] = df['record_id'].str.replace(r'@psu\.edu', '', regex=True)
+
+        df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')  # Convert to numeric, handle errors
+        df[quiz_score_column] = (df[quiz_score_column] / 20) * 100  # Convert to percentage
         
         st.dataframe(df)
 
