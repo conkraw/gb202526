@@ -404,17 +404,20 @@ elif instrument == "Weekly Quiz Reports":
         quiz_late_column = f"quiz_{week}_late"
         quiz_score_column = f"quiz{week}"
 
+        # Select only the desired columns: sis_id, quiz1, and quiz_1_late
+        df = df[['sis_id', "submitted", "score"]]
+        
         # Rename columns
         df.rename(columns={
+            "sis_id": "record_id",
             "submitted": quiz_late_column,
             "score": quiz_score_column,
         }, inplace=True)
 
-        # Select only the desired columns: sis_id, quiz1, and quiz_1_late
-        df = df[['sis_id', quiz_score_column, quiz_late_column]]
+
 
         # Rename 'sis_id' to 'record_id' and drop '@psu.edu'
-        df['record_id'] = df['sis_id'].str.replace(r'@psu\.edu', '', regex=True)
+        df['record_id'] = df['record_id'].str.replace(r'@psu\.edu', '', regex=True)
         
         st.dataframe(df)
 
