@@ -410,7 +410,11 @@ elif instrument == "Weekly Quiz Reports":
             "score": quiz_score_column,
         }, inplace=True)
 
-        st.dataframe(df)
+        # Select only the desired columns: sis_id, quiz1, and quiz_1_late
+        df_selected = df[['sis_id', quiz_score_column, quiz_late_column]]
+        
+        # Display the dataframe with only the selected columns
+        st.dataframe(df_selected)
 
     
 
