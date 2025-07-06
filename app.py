@@ -297,6 +297,44 @@ elif instrument == "Preceptor Matching":
         mime="text/csv",
     )
 
+elif instrument == "Email Record Mapper":
+    st.header("📧 Email Record Mapper")
+
+    # Upload exactly one Roster CSV
+    roster_file = st.file_uploader(
+        "Upload a Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster_upload"
+    )
+    if not roster_file:
+        st.stop()
+
+    # Read the CSV
+    df_roster = pd.read_csv(roster_file, dtype=str)
+
+    # Rename only the needed columns
+    rename_map = {
+        "Student Email":      "email",
+        "Student External ID": "record_id",
+    }
+    df_roster = df_roster.rename(columns=rename_map)
+
+    # Keep only relevant columns (you can customize this list)
+    keep_cols = ["record_id", "email"]
+    df_roster = df_roster[keep_cols]
+
+    # Remove rows with missing emails or record_id
+    df_roster = df_roster.dropna(subset=["record_id", "email"])
+
+    # Optional: Sort by student_name or record_id
+    df_roster = df_roster.sort_values(by="email")
+
+    # Preview and download
+    st.dataframe(df_roster, height=400)
+    st.download_button("📥 Download Mapped Email Roster",df_roster.to_csv(index=False).encode("utf-8"),file_name="email_roster_mapped.csv",mime="text/csv")
+
+
 elif instrument == "Roster":
     st.header("🔖 Roster")
 
@@ -456,3 +494,6 @@ elif instrument == "Roster":
     st.dataframe(df_roster, height=400)
     
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
+
+
+
