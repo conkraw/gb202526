@@ -415,7 +415,7 @@ elif instrument == "Weekly Quiz Reports":
             df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
         else:
             df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
-        df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+        df[quiz_late_column] = (df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%-m/%-d/%Y %H:%M")
     
         # Keep only what's needed
         df = df[["record_id", quiz_score_column, quiz_late_column]]
