@@ -1,6 +1,8 @@
 import re
 import streamlit as st
 import pandas as pd
+from io import BytesIO
+from docx import Document
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
 st.title("🔄 REDCap Instruments Formatter")
@@ -332,7 +334,34 @@ elif instrument == "Email Record Mapper":
 
     # Preview and download
     st.dataframe(df_roster, height=400)
-    st.download_button("📥 Download Mapped Email Roster",df_roster.to_csv(index=False).encode("utf-8"),file_name="email_roster_mapped.csv",mime="text/csv")
+    doc = Document()
+    doc.add_heading('Mapped Email Roster', level=1)
+    
+    # Add table
+    table = doc.add_table(rows=1, cols=2)
+    table.style = 'Table Grid'
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'Record ID'
+    hdr_cells[1].text = 'Email'
+    
+    # Add each row
+    for _, row in df_roster.iterrows():
+        cells = table.add_row().cells
+        cells[0].text = str(row['record_id'])
+        cells[1].text = str(row['student_email'])
+    
+    # Save Word doc to memory
+    doc_io = BytesIO()
+    doc.save(doc_io)
+    doc_io.seek(0)
+    
+    # Streamlit download button for .docx
+    st.download_button(
+        label="📥 Download Mapped Email Roster (Word)",
+        data=doc_io,
+        file_name="email_roster_mapped.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 
 elif instrument == "Roster":
