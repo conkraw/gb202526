@@ -550,7 +550,7 @@ elif instrument == "Roster":
     
     # 2) for each one, make a new column rot_date_#
     for idx, dt in enumerate(unique_dates, 1):
-        df_roster[f"rot_date_{idx}"] = dt.strftime("%Y-%m-%d")
+        df_roster[f"rot_date_{idx}"] = dt.strftime("%m-%d-%Y")
     
     # 3) build a mapping from date → rotation code
     rotation_map = {dt: f"R{idx}" for idx, dt in enumerate(unique_dates, 1)}
