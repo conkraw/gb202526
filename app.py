@@ -376,57 +376,68 @@ elif instrument == "Weekly Quiz Reports":
         st.warning("Please upload *exactly* four CSV files here.")
         st.stop()
 
-    # Create an empty DataFrame for combining later
-    df_quiz_combined = pd.DataFrame()
+    # 2) Create a list to hold DataFrames for each quiz (Week 1 to Week 4)
+    quiz_dfs = []
 
-    # 2) Load each file, rename columns, and add to combined DataFrame
+    # 3) Process each file separately
     for week, file in enumerate(uploaded, start=1):
         df = pd.read_csv(file, dtype=str)
 
-        # Rename the columns (e.g., "submitted_date" to "quiz_1_late", "quiz_2_late", etc.)
+        # 4) Rename columns for each quiz file (e.g., submitted_date → quiz_1_late, quiz_2_late)
+        quiz_late_column = f"quiz_{week}_late"
+        quiz_score_column = f"quiz{week}"
+
+        # Check if 'submitted' and 'score' columns exist
+        if "submitted" not in df.columns or "score" not in df.columns:
+            st.warning(f"File for Week {week} is missing 'submitted' or 'score' columns.")
+            continue
+
+        # Rename the necessary columns
         df.rename(columns={
-            "submitted": f"quiz_{week}_late",
-            "score": f"quiz{week}",
+            "submitted": quiz_late_column,
+            "score": quiz_score_column,
         }, inplace=True)
 
-        # Convert the date columns to datetime and handle the timezone conversion
-        quiz_late_column = f"quiz_{week}_late"
+        # 5) Convert the 'submitted' (quiz late) columns to datetime
         df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
 
-        # Convert to UTC if naive and then convert to US/Eastern
+        # 6) Set the timezone conversion to US/Eastern for the quiz late dates (if needed)
         if df[quiz_late_column].dt.tz is None:
             df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
         else:
             df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
 
-        # Set time to 23:59 (no seconds)
+        # 7) Set time to 23:59 (no seconds)
         df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
 
-        st.dataframe()
-        # Append to the combined DataFrame (merge by record_id)
-        #if df_quiz_combined.empty:
-        #    df_quiz_combined = df
-        #else:
-        #    # Use f-string for quiz columns to get the correct column names
-        #    quiz_column = f"quiz{week}"
-        #    df_quiz_combined = pd.merge(df_quiz_combined, df[['record_id', quiz_late_column, quiz_column]], on="record_id", how="outer")
+        # 8) Calculate the quiz score percentage (divide by 20 and multiply by 100)
+        df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')
+        df[quiz_score_column] = (df[quiz_score_column] / 20) * 100
+        df[quiz_score_column] = df[quiz_score_column].fillna('')
 
-    # 3) Calculate quiz score percentage for each quiz
-    #for week in range(1, 5):
-    #    quiz_column = f"quiz{week}"
-    #    df_quiz_combined[quiz_column] = pd.to_numeric(df_quiz_combined[quiz_column], errors='coerce')
-    #    df_quiz_combined[quiz_column] = (df_quiz_combined[quiz_column] / 20) * 100
-    #    df_quiz_combined[quiz_column] = df_quiz_combined[quiz_column].fillna('')
+        # 9) Append the individual DataFrame for each quiz
+        quiz_dfs.append(df)
 
-    # 4) Final column ordering (record_id and quiz late columns first, then quiz scores)
-    #quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
-    #quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
-    #final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
-    #df_quiz_combined = df_quiz_combined[final_columns]
+    # 10) Combine the DataFrames for all quizzes (Week 1 to Week 4) vertically
+    df_quiz_combined = pd.concat(quiz_dfs, ignore_index=True, sort=False)
 
-    # 5) Preview + download
-    #st.dataframe(df_quiz_combined, height=400)
-    #st.download_button("📥 Download formatted Weekly Quiz CSV",df_quiz_combined.to_csv(index=False).encode("utf-8"),file_name="weekly_quiz_formatted.csv",mime="text/csv")
+    # 11) Final column ordering: record_id, quiz late dates, and quiz scores
+    quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
+    quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
+    final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
+    df_quiz_combined = df_quiz_combined[final_columns]
+
+    # 12) Preview + download
+    st.dataframe(df_quiz_combined, height=400)
+    st.download_button(
+        "📥 Download formatted Weekly Quiz CSV",
+        df_quiz_combined.to_csv(index=False).encode("utf-8"),
+        file_name="weekly_quiz_formatted.csv",
+        mime="text/csv",
+    )
+
+
+    
 
 elif instrument == "Roster":
     st.header("🔖 Roster")
