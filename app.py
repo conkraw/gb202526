@@ -416,13 +416,6 @@ elif instrument == "Weekly Quiz Reports":
         # Rename 'sis_id' to 'record_id' and drop '@psu.edu'
         df['record_id'] = df['sis_id'].str.replace(r'@psu\.edu', '', regex=True)
         
-        # Convert quiz columns to percentage (divide by 20 and multiply by 100)
-        quiz_columns = ['quiz1', 'quiz2', 'quiz3', 'quiz4']  # List your quiz columns here
-        for col in quiz_columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')  # Convert to numeric, handling errors
-            df[col] = (df[col] / 20) * 100  # Convert to percentage
-    
-        # Display the dataframe with only the selected columns
         st.dataframe(df)
 
     
