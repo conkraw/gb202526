@@ -448,17 +448,10 @@ elif instrument == "Roster":
     ]
     
     for col in due_cols:
-        df_roster[col] = (
-            df_roster[col].dt.normalize()
-            + pd.Timedelta(hours=23, minutes=59)
-        ).dt.strftime("%Y-%m-%d %H:%M")
-
+        #df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%Y-%m-%d %H:%M")
+        df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
+        
     # preview + download
     st.dataframe(df_roster, height=400)
     
-    st.download_button(
-        "📥 Download formatted Roster CSV",
-        df_roster.to_csv(index=False).encode("utf-8"),
-        file_name="roster_formatted.csv",
-        mime="text/csv",
-    )
+    st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
