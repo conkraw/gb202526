@@ -8,7 +8,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "NBME Scores", "Preceptor Matching", "Roster"]
+    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster"]
 )
 
 if instrument == "OASIS Evaluation":
