@@ -360,6 +360,10 @@ elif instrument == "Email Record Mapper":
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
+import pytz
+import pandas as pd
+import streamlit as st
+
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
 
@@ -392,11 +396,7 @@ elif instrument == "Weekly Quiz Reports":
         "n correct":       "num_correct",
         "n incorrect":     "num_incorrect",
         "score":           "quiz_score",
-        "quiz_1_late":     "quiz_1_late",
-        "quiz_2_late":     "quiz_2_late",
-        "quiz_3_late":     "quiz_3_late",
-        "quiz_4_late":     "quiz_4_late",
-        # … add other necessary mappings here …
+        # quiz late columns will be added later based on the week number
     }
     df_quiz = df_quiz.rename(columns=rename_map_quiz)
 
@@ -417,28 +417,27 @@ elif instrument == "Weekly Quiz Reports":
     df_quiz = df_quiz.sort_values(by=["record_id", "submitted_date"], ascending=[True, False])  # Sort by record_id and most recent date
     df_quiz = df_quiz.drop_duplicates(subset=["record_id"], keep="first")  # Keep the latest score per student
 
-    # 10) Renaming the quiz columns
-    df_quiz["quiz1"] = df_quiz["quiz_score"]  # You can adapt this to quiz1, quiz2, etc. based on your dataset logic
-    
-    # 11) Handle quiz late dates (convert from UTC to US/Eastern and set to 23:59)
+    # 10) Handle quiz late dates (convert from UTC to US/Eastern and set to 23:59)
     quiz_late_columns = ["quiz_1_late", "quiz_2_late", "quiz_3_late", "quiz_4_late"]
 
-    # Loop through each quiz late column and handle conversion
-    for col in quiz_late_columns:
-        # Convert to datetime if necessary
-        df_quiz[col] = pd.to_datetime(df_quiz[col], errors='coerce')  # handle invalid dates if any
+    # Loop through each uploaded file and assign the corresponding late date column
+    for idx, file in enumerate(uploaded, 1):  # Start from Week 1 to Week 4
+        week_quiz_late_column = f"quiz_{idx}_late"
+        
+        # Add the column dynamically for each week (e.g. quiz_1_late, quiz_2_late, etc.)
+        df_quiz[week_quiz_late_column] = pd.to_datetime(df_quiz[week_quiz_late_column], errors='coerce')  # handle invalid dates if any
 
         # Convert to UTC if naive and then convert to US/Eastern
-        if df_quiz[col].dt.tz is None:
-            df_quiz[col] = df_quiz[col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+        if df_quiz[week_quiz_late_column].dt.tz is None:
+            df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
         else:
-            df_quiz[col] = df_quiz[col].dt.tz_convert('US/Eastern')
-        
+            df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.tz_convert('US/Eastern')
+
         # Set time to 23:59 (no seconds)
-        df_quiz[col] = df_quiz[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+        df_quiz[week_quiz_late_column] = df_quiz[week_quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
 
 
-    # 14) Preview + download
+    # 13) Preview + download
     st.dataframe(df_quiz, height=400)
     st.download_button(
         "📥 Download formatted Weekly Quiz CSV",
