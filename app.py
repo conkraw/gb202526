@@ -419,6 +419,17 @@ elif instrument == "Weekly Quiz Reports":
 
         df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')  # Convert to numeric, handle errors
         df[quiz_score_column] = (df[quiz_score_column] / 20) * 100  # Convert to percentage
+
+        df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
+
+        # Convert from UTC to US/Eastern timezone if the datetime is naive (without timezone)
+        if df[quiz_late_column].dt.tz is None:
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+        else:
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
+        
+        # Set the time to 23:59 (without seconds)
+        df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
         
         st.dataframe(df)
 
