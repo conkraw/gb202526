@@ -350,12 +350,99 @@ elif instrument == "Email Record Mapper":
     doc_io.seek(0)
     
     # Download button for Word
-    st.download_button(
-        label="📥 Download REDCap Dropdown (Word)",
-        data=doc_io,
-        file_name="email_roster_dropdown.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    st.download_button(label="📥 Download REDCap Dropdown (Word)",data=doc_io,file_name="email_roster_dropdown.docx",mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+import pytz
+import pandas as pd
+import streamlit as st
+
+elif instrument == "Weekly Quiz Reports":
+    st.header("🔖 Weekly Quiz Reports")
+
+    # 1) upload exactly four CSVs
+    uploaded = st.file_uploader(
+        "Upload exactly four Weekly Quiz CSVs",
+        type=["csv"],
+        accept_multiple_files=True,
+        key="weekly_quiz"
     )
+    if not uploaded:
+        st.stop()
+    if len(uploaded) != 4:
+        st.warning("Please upload *exactly* four CSV files here.")
+        st.stop()
+
+    # 2) read + concat
+    dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
+    df_quiz = pd.concat(dfs, ignore_index=True, sort=False)
+
+    # 3) Clean the sis_id and create record_id
+    df_quiz["record_id"] = df_quiz["sis_id"].str.replace(r"@psu\.edu", "", regex=True)
+
+    # 4) rename only the columns you want to send to REDCap
+    rename_map_quiz = {
+        "name":            "student_name",
+        "record_id":       "record_id",  # already cleaned
+        "submitted":       "submitted_date",
+        "attempt":         "attempt_number",
+        "n correct":       "num_correct",
+        "n incorrect":     "num_incorrect",
+        "score":           "quiz_score",
+        "quiz_1_late":     "quiz_1_late",
+        "quiz_2_late":     "quiz_2_late",
+        "quiz_3_late":     "quiz_3_late",
+        "quiz_4_late":     "quiz_4_late",
+        # … add other necessary mappings here …
+    }
+    df_quiz = df_quiz.rename(columns=rename_map_quiz)
+
+    # 5) Select + reorder to exactly those fields
+    df_quiz = df_quiz[list(rename_map_quiz.values())]
+
+    # 6) Remove student_name, attempt_number, num_correct, num_incorrect
+    df_quiz.drop(columns=["student_name", "attempt_number", "num_correct", "num_incorrect"], inplace=True)
+
+    # 7) Calculate quiz score percentage (divide by 20 and multiply by 100)
+    df_quiz["quiz_score"] = pd.to_numeric(df_quiz["quiz_score"], errors='coerce')
+    df_quiz["quiz_score"] = (df_quiz["quiz_score"] / 20) * 100
+
+    # 8) Handle missing scores (if no score exists, leave blank)
+    df_quiz["quiz_score"] = df_quiz["quiz_score"].fillna('')
+
+    # 9) Handle repeated quizzes: take the latest score
+    df_quiz = df_quiz.sort_values(by=["record_id", "submitted_date"], ascending=[True, False])  # Sort by record_id and most recent date
+    df_quiz = df_quiz.drop_duplicates(subset=["record_id"], keep="first")  # Keep the latest score per student
+
+    # 10) Renaming the quiz columns
+    df_quiz["quiz1"] = df_quiz["quiz_score"]  # You can adapt this to quiz1, quiz2, etc. based on your dataset logic
+    
+    # 11) Handle quiz late dates (convert from UTC to US/Eastern and set to 23:59)
+    quiz_late_columns = ["quiz_1_late", "quiz_2_late", "quiz_3_late", "quiz_4_late"]
+
+    # Loop through each quiz late column and handle conversion
+    for col in quiz_late_columns:
+        # Convert to datetime if necessary
+        df_quiz[col] = pd.to_datetime(df_quiz[col], errors='coerce')  # handle invalid dates if any
+
+        # Convert to UTC if naive and then convert to US/Eastern
+        if df_quiz[col].dt.tz is None:
+            df_quiz[col] = df_quiz[col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+        else:
+            df_quiz[col] = df_quiz[col].dt.tz_convert('US/Eastern')
+        
+        # Set time to 23:59 (no seconds)
+        df_quiz[col] = df_quiz[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+
+
+    # 14) Preview + download
+    st.dataframe(df_quiz, height=400)
+    st.download_button(
+        "📥 Download formatted Weekly Quiz CSV",
+        df_quiz.to_csv(index=False).encode("utf-8"),
+        file_name="weekly_quiz_formatted.csv",
+        mime="text/csv",
+    )
+
 
 elif instrument == "Roster":
     st.header("🔖 Roster")
