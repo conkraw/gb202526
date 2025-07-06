@@ -377,71 +377,71 @@ elif instrument == "Weekly Quiz Reports":
         st.stop()
 
     for file in uploaded:
-    df = pd.read_csv(file, dtype=str)
+        df = pd.read_csv(file, dtype=str)
+    
+        # Identify the quiz week from the filename
+        week = None
+        if 'week 1' in file.name.lower():
+            week = 1
+        elif 'week 2' in file.name.lower():
+            week = 2
+        elif 'week 3' in file.name.lower():
+            week = 3
+        elif 'week 4' in file.name.lower():
+            week = 4
+        else:
+            st.warning(f"Could not identify week from filename: {file.name}")
+            continue
+    
+        # Rename columns
+        quiz_score_column = f"quiz{week}"
+        quiz_late_column  = f"quiz_{week}_late"
+        df.rename(columns={
+            "sis_id": "record_id",
+            "submitted": quiz_late_column,
+            "score": quiz_score_column,
+        }, inplace=True)
+    
+        # Clean record_id
+        df["record_id"] = df["record_id"].str.replace(r"@psu\.edu", "", regex=True)
+    
+        # Convert quiz score to percentage
+        df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')
+        df[quiz_score_column] = (df[quiz_score_column] / 20) * 100
+    
+        # Parse and localize late date
+        df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
+        if df[quiz_late_column].dt.tz is None:
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+        else:
+            df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
+        df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
+    
+        # Keep only what's needed
+        df = df[["record_id", quiz_score_column, quiz_late_column]]
+    
+        # Store in variable like df_1, df_2, etc.
+        globals()[f"df_{week}"] = df
 
-    # Identify the quiz week from the filename
-    week = None
-    if 'week 1' in file.name.lower():
-        week = 1
-    elif 'week 2' in file.name.lower():
-        week = 2
-    elif 'week 3' in file.name.lower():
-        week = 3
-    elif 'week 4' in file.name.lower():
-        week = 4
-    else:
-        st.warning(f"Could not identify week from filename: {file.name}")
-        continue
-
-    # Rename columns
-    quiz_score_column = f"quiz{week}"
-    quiz_late_column  = f"quiz_{week}_late"
-    df.rename(columns={
-        "sis_id": "record_id",
-        "submitted": quiz_late_column,
-        "score": quiz_score_column,
-    }, inplace=True)
-
-    # Clean record_id
-    df["record_id"] = df["record_id"].str.replace(r"@psu\.edu", "", regex=True)
-
-    # Convert quiz score to percentage
-    df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')
-    df[quiz_score_column] = (df[quiz_score_column] / 20) * 100
-
-    # Parse and localize late date
-    df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
-    if df[quiz_late_column].dt.tz is None:
-        df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
-    else:
-        df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
-    df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
-
-    # Keep only what's needed
-    df = df[["record_id", quiz_score_column, quiz_late_column]]
-
-    # Store in variable like df_1, df_2, etc.
-    globals()[f"df_{week}"] = df
-
-# Outer join them all using record_id
-dfs = [globals().get(f"df_{w}") for w in range(1, 5) if f"df_{w}" in globals()]
-df_quiz_combined = dfs[0]
-for df in dfs[1:]:
-    df_quiz_combined = pd.merge(df_quiz_combined, df, on="record_id", how="outer")
-
-# Order columns
-final_columns = ["record_id"] + [f"quiz{w}" for w in range(1, 5)] + [f"quiz_{w}_late" for w in range(1, 5)]
-df_quiz_combined = df_quiz_combined.reindex(columns=final_columns)
-
-# Preview + download
-st.dataframe(df_quiz_combined, height=400)
-st.download_button(
-    "📥 Download formatted Weekly Quiz CSV",
-    df_quiz_combined.to_csv(index=False).encode("utf-8"),
-    file_name="weekly_quiz_formatted.csv",
-    mime="text/csv",
-)
-  
+    # Outer join them all using record_id
+    dfs = [globals().get(f"df_{w}") for w in range(1, 5) if f"df_{w}" in globals()]
+    df_quiz_combined = dfs[0]
+    for df in dfs[1:]:
+        df_quiz_combined = pd.merge(df_quiz_combined, df, on="record_id", how="outer")
+    
+    # Order columns
+    final_columns = ["record_id"] + [f"quiz{w}" for w in range(1, 5)] + [f"quiz_{w}_late" for w in range(1, 5)]
+    df_quiz_combined = df_quiz_combined.reindex(columns=final_columns)
+    
+    # Preview + download
+    st.dataframe(df_quiz_combined, height=400)
+    st.download_button(
+        "📥 Download formatted Weekly Quiz CSV",
+        df_quiz_combined.to_csv(index=False).encode("utf-8"),
+        file_name="weekly_quiz_formatted.csv",
+        mime="text/csv",
+    )
+      
         
     
 elif instrument == "Roster":
