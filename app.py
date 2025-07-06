@@ -410,44 +410,7 @@ elif instrument == "Weekly Quiz Reports":
             "score": quiz_score_column,
         }, inplace=True)
 
-        # Convert the date columns to datetime and handle the timezone conversion
-        df[quiz_late_column] = pd.to_datetime(df[quiz_late_column], errors='coerce')
-
-        # Convert to UTC if naive and then convert to US/Eastern
-        if df[quiz_late_column].dt.tz is None:
-            df[quiz_late_column] = df[quiz_late_column].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
-        else:
-            df[quiz_late_column] = df[quiz_late_column].dt.tz_convert('US/Eastern')
-
-        # Set time to 23:59 (no seconds)
-        df[quiz_late_column] = df[quiz_late_column].dt.normalize() + pd.Timedelta(hours=23, minutes=59)
-
-        # Calculate the quiz score percentage (divide by 20 and multiply by 100)
-        df[quiz_score_column] = pd.to_numeric(df[quiz_score_column], errors='coerce')
-        df[quiz_score_column] = (df[quiz_score_column] / 20) * 100
-        df[quiz_score_column] = df[quiz_score_column].fillna('')
-
-        # Add this DataFrame to the combined list
-        df_quiz_combined.append(df)
-
-    # 4) Combine the DataFrames for all quizzes (Week 1 to Week 4)
-    df_quiz_combined = pd.concat(df_quiz_combined, ignore_index=True, sort=False)
-
-    # 5) Final column ordering: record_id, quiz late columns, and quiz scores
-    quiz_late_columns = [f"quiz_{week}_late" for week in range(1, 5)]
-    quiz_score_columns = [f"quiz{week}" for week in range(1, 5)]
-    final_columns = ["record_id"] + quiz_late_columns + quiz_score_columns
-    df_quiz_combined = df_quiz_combined[final_columns]
-
-    # 6) Preview + download
-    st.dataframe(df_quiz_combined, height=400)
-    st.download_button(
-        "📥 Download formatted Weekly Quiz CSV",
-        df_quiz_combined.to_csv(index=False).encode("utf-8"),
-        file_name="weekly_quiz_formatted.csv",
-        mime="text/csv",
-    )
-
+        st.dataframe(df)
 
     
 
