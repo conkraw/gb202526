@@ -150,7 +150,7 @@ elif instrument == "Checklist Entry":
     submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
     submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
 
-    # Step 1: Create separate summary rows
+    # Create summary rows (non-repeating)
     df_summary = pd.DataFrame({
         "record_id": submitted_max.index,
         "submitted_ce": submitted_max.values,
@@ -159,18 +159,23 @@ elif instrument == "Checklist Entry":
         "redcap_repeat_instance": ""
     })
 
-    # Step 2: Add missing columns to match df_cl
+    # Add missing columns to match df_cl
     for col in df_cl.columns:
         if col not in df_summary.columns:
             df_summary[col] = ""
 
-    # Step 3: Align column order
+    # Align column order
     df_summary = df_summary[df_cl.columns]
 
-    # Step 4: Concatenate checklist entries + summary rows
+    # Concatenate checklist entries + summary rows
     df_cl = pd.concat([df_cl, df_summary], ignore_index=True)
 
-    # Drop unnecessary columns
+    # Move key columns to front
+    front_cols = ["record_id", "submitted_ce", "submitted_ce_min"]
+    rest_cols = [c for c in df_cl.columns if c not in front_cols]
+    df_cl = df_cl[front_cols + rest_cols]
+
+    # Now drop unnecessary columns
     df_cl = df_cl.drop(columns=["email", "date", "start_date"])
 
     # Show + download
