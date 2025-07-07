@@ -103,7 +103,7 @@ elif instrument == "Checklist Entry":
         "Student name":           "student_name",
         "External ID":            "external_id",
         "Email":                  "email",
-        "Start Date":             "start_date_cl",
+        "Start Date":             "start_date",
         "Location":               "location_cl",
         "Checklist":              "checklist",
         "Checklist status":       "checklist_status",
@@ -144,7 +144,18 @@ elif instrument == "Checklist Entry":
     all_cols += ["redcap_repeat_instrument","redcap_repeat_instance"]
     df_cl = df_cl[all_cols]
 
-    df_cl = df_cl.drop(columns=["email","date"])
+    # Ensure 'start_date' is datetime
+    df_cl["start_date"] = pd.to_datetime(df_cl["start_date"], errors="coerce")
+    
+    # Group by record_id and compute max and min dates
+    submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
+    submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
+    
+    # Map back to the original dataframe
+    df_cl["submitted_ce"] = df_cl["record_id"].map(submitted_max)
+    df_cl["submitted_ce_min"] = df_cl["record_id"].map(submitted_min)
+
+    df_cl = df_cl.drop(columns=["email","date","start_date"])
     
     st.dataframe(df_cl, height=400)
     st.download_button(
