@@ -144,11 +144,11 @@ elif instrument == "Checklist Entry":
     df_cl = df_cl[all_cols]
 
     # Ensure 'start_date' is datetime
-    df_cl["start_date"] = pd.to_datetime(df_cl["start_date"], errors="coerce")
+    df_cl["start_date"] = pd.to_datetime(df_cl["time_entered"], errors="coerce")
 
     # Group by record_id and compute max and min start_date
-    submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
-    submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
+    submitted_max = df_cl.groupby("record_id")["time_entered"].max().dt.strftime("%m-%d-%Y")
+    submitted_min = df_cl.groupby("record_id")["time_entered"].min().dt.strftime("%m-%d-%Y")
 
     # Add empty submitted_ce columns to df_cl so they exist for reordering
     df_cl["submitted_ce"] = ""
