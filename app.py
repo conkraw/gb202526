@@ -94,11 +94,11 @@ elif instrument == "Checklist Entry":
         st.warning("Please upload *exactly* two CSV files here.")
         st.stop()
 
-    # read + concat
+    # Read + concat
     dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
     df_cl = pd.concat(dfs, ignore_index=True, sort=False)
 
-    # rename only your 22 columns
+    # Rename only your 22 columns
     rename_map = {
         "Student name":           "student_name",
         "External ID":            "external_id",
@@ -124,39 +124,47 @@ elif instrument == "Checklist Entry":
     }
     df_cl = df_cl.rename(columns=rename_map)
 
-    # select + reorder
+    # Select + reorder
     target = list(rename_map.values())
     df_cl = df_cl[target]
 
-    # move external_id → record_id up front
+    # Move external_id → record_id up front
     df_cl = df_cl.rename(columns={"external_id": "record_id"})
     cols = ["record_id"] + [c for c in df_cl.columns if c != "record_id"]
     df_cl = df_cl[cols]
 
-    # add REDCap repeater
+    # Add REDCap repeater
     df_cl["redcap_repeat_instrument"] = "checklist_entry"
-    df_cl["redcap_repeat_instance"]   = df_cl.groupby("record_id").cumcount() + 1
+    df_cl["redcap_repeat_instance"] = df_cl.groupby("record_id").cumcount() + 1
 
-    # final order
+    # Final column order
     all_cols = df_cl.columns.tolist()
-    # ensure instrument + instance are last
-    all_cols = [c for c in all_cols if c not in ("redcap_repeat_instrument","redcap_repeat_instance")]
-    all_cols += ["redcap_repeat_instrument","redcap_repeat_instance"]
+    all_cols = [c for c in all_cols if c not in ("redcap_repeat_instrument", "redcap_repeat_instance")]
+    all_cols += ["redcap_repeat_instrument", "redcap_repeat_instance"]
     df_cl = df_cl[all_cols]
 
     # Ensure 'start_date' is datetime
     df_cl["start_date"] = pd.to_datetime(df_cl["start_date"], errors="coerce")
-    
-    # Group by record_id and compute max and min dates
+
+    # Group by record_id and compute max and min start_date
     submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
     submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
-    
-    # Map back to the original dataframe
-    df_cl["submitted_ce_x"] = df_cl["record_id"].map(submitted_max)
-    df_cl["submitted_ce_min_x"] = df_cl["record_id"].map(submitted_min)
-    
-    df_cl = df_cl.drop(columns=["email","date","start_date"])
-    
+
+    # Map results back to each row
+    df_cl["submitted_ce"] = df_cl["record_id"].map(submitted_max)
+    df_cl["submitted_ce_min"] = df_cl["record_id"].map(submitted_min)
+
+    # Blank values except for the first instance
+    mask_first_instance = (
+        (df_cl["redcap_repeat_instrument"] == "checklist_entry") &
+        (df_cl["redcap_repeat_instance"].astype(str) == "1")
+    )
+    df_cl.loc[~mask_first_instance, ["submitted_ce", "submitted_ce_min"]] = ""
+
+    # Drop unused columns
+    df_cl = df_cl.drop(columns=["email", "date", "start_date"])
+
+    # Show + download
     st.dataframe(df_cl, height=400)
     st.download_button(
         "📥 Download formatted checklist CSV",
@@ -164,6 +172,7 @@ elif instrument == "Checklist Entry":
         file_name="checklist_entries.csv",
         mime="text/csv",
     )
+
 
 # ─── NBME Score ─────────────────────────────────────────────────────────────
 
