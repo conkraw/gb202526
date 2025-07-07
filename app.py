@@ -143,8 +143,8 @@ elif instrument == "Checklist Entry":
     all_cols += ["redcap_repeat_instrument", "redcap_repeat_instance"]
     df_cl = df_cl[all_cols]
 
-    # Ensure 'start_date' is datetime
-    df_cl["start_date"] = pd.to_datetime(df_cl["time_entered"], errors="coerce")
+    # Ensure 'time_entered' is datetime
+    df_cl["time_entered"] = pd.to_datetime(df_cl["time_entered"], errors="coerce")
 
     # Group by record_id and compute max and min start_date
     submitted_max = df_cl.groupby("record_id")["time_entered"].max().dt.strftime("%m-%d-%Y")
