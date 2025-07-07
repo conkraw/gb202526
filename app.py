@@ -148,13 +148,15 @@ elif instrument == "Checklist Entry":
     df_cl["start_date"] = pd.to_datetime(df_cl["start_date"], errors="coerce")
     
     # Group by record_id and compute max and min dates
-    submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
-    submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
+    #submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
+    #submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
     
     # Map back to the original dataframe
-    df_cl["submitted_ce"] = df_cl["record_id"].map(submitted_max)
-    df_cl["submitted_ce_min"] = df_cl["record_id"].map(submitted_min)
+    #df_cl["submitted_ce"] = df_cl["record_id"].map(submitted_max)
+    #df_cl["submitted_ce_min"] = df_cl["record_id"].map(submitted_min)
 
+    df_roster["time_entered"] = df_roster["time_entered"].dt.strftime("%m-%d-%Y")
+    
     df_cl = df_cl.drop(columns=["email","date","start_date"])
     
     st.dataframe(df_cl, height=400)
