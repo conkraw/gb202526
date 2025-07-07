@@ -150,6 +150,10 @@ elif instrument == "Checklist Entry":
     submitted_max = df_cl.groupby("record_id")["start_date"].max().dt.strftime("%m-%d-%Y")
     submitted_min = df_cl.groupby("record_id")["start_date"].min().dt.strftime("%m-%d-%Y")
 
+    # Add empty submitted_ce columns to df_cl so they exist for reordering
+    df_cl["submitted_ce"] = ""
+    df_cl["submitted_ce_min"] = ""
+
     # Create summary rows (non-repeating)
     df_summary = pd.DataFrame({
         "record_id": submitted_max.index,
