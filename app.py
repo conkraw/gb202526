@@ -816,7 +816,7 @@ elif instrument == "Roster_HMC":
         df_roster[f"rot_date_{idx}"] = df_roster["start_date"].apply(lambda x: dt.strftime("%m-%d-%Y") if pd.notna(x) and x == dt else "")
 
     # 3) build a mapping from date → rotation code
-    rotation_map = {dt: f"r{idx}" for idx, dt in enumerate(unique_dates, 1)}
+    rotation_map = {dt: f"r{idx:02}" for idx, dt in enumerate(unique_dates, 1)}
     
     # 4) assign each student’s rotation1 based on their start_date
     df_roster["rotation1"] = df_roster["start_date"].map(rotation_map)
@@ -858,9 +858,6 @@ elif instrument == "Roster_HMC":
     ]
     
     for col in due_cols:
-        #df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%Y-%m-%d %H:%M")
-        #df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m/%d/%Y 23:59")
-        #df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%-m/%-d/%Y 23:59")
         df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
 
     df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
