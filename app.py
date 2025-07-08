@@ -608,6 +608,57 @@ elif instrument == "Developmental Assessment Form":
         mime="text/csv"
     )
 
+elif instrument == "Documentation Submission #1":
+    st.header("📧 Documentation Submission #1")
+
+    # Upload exactly one CSV
+    roster_file = st.file_uploader(
+        "Upload a Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster_upload"
+    )
+    if not roster_file:
+        st.stop()
+
+    # Read the CSV
+    df = pd.read_csv(roster_file, dtype=str)
+
+    # Only keep the columns you care about
+    cols = [
+        "documentation_submission_1_timestamp", "email_2", "age_v1", "visit_date_v1", "setting_v1", "chief_v1", "cc_v1",
+        "historian_v1", "super_clinician_v1", "historyofpresentillness_v1", "reviewofsystems_v1", "hpi_v1", "ros_v1",
+        "pmhx_v1", "pshx_v1", "birthhx_v1", "famhx_v1", "socialhx_v1", "meds_v1", "imm_v1", "allg_v1", "diet_v1", "dev_v1",
+        "addhx_v1", "soc_hx_features_v1", "all_v1", "med_v1", "temp_v1", "hr_v1", "rr_v1", "pulseox_v1", "sbp_v1", "dbp_v1",
+        "weight_v1", "weighttile_v1", "height_v1", "heighttile_v1", "bmi_v1", "bmitile_v1", "vs_v1", "physicalexam_v1",
+        "pe_v1", "dxs_v1", "dxstud_v1", "probrep_v1", "probstatement_v1", "mostlikelydiagnosis_v1",
+        "seclikelydiagnosis_v1", "thirlikelydiagnosis_v1", "mostlikelydiagnosisj_v1", "seclikelydiagnosisj_v1",
+        "thirlikelydiagnosisj_v1", "diffdx_v1", "txplan_v1", "probid_v1", "plan_v1", "grammar_v1", "hpiwordcount_v1",
+        "hpiwords_v1", "score_v1", "scorep_v1", "doccomment_v1"
+    ]
+
+    df = df.rename(columns={"email_2": "record_id", "documentation_submission_1_timestamp":"peddoclate1"})
+
+    missing = set(cols) - set(df.columns)
+    if missing:
+        st.error(f"Missing expected columns: {', '.join(missing)}")
+        st.stop()
+    df = df[cols].copy()
+
+    df["peddoclate1"] = pd.to_datetime(df_grouped["peddoclate1"]).dt.strftime("%m-%d-%Y")
+
+    # Preview in Streamlit
+    st.dataframe(df, height=400)
+
+    # Drop rows with missing record_id
+    df = df[df["record_id"].notna() & (df["record_id"].str.strip() != "")]
+
+    cols = ["record_id"] + [col for col in df.columns if col != "record_id"]
+    df = df[cols]
+
+    # Offer as CSV download
+    csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
+    st.download_button(label="📥 Download Documentation Submission #1",data=csv_bytes,file_name="docsubmit1.csv",mime="text/csv")
 
     
 elif instrument == "Roster":
