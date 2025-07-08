@@ -14,7 +14,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster", "SDOH Form", "Developmental Assessment Form", "Weekly Quiz Reports", "Documentation Submission #1"]
+    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster", "SDOH Form", "Developmental Assessment Form", "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -660,6 +660,52 @@ elif instrument == "Documentation Submission #1":
     csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(label="📥 Download Documentation Submission #1",data=csv_bytes,file_name="docsubmit1.csv",mime="text/csv")
 
+elif instrument == "Documentation Submission #2":
+    st.header("📧 Documentation Submission #2")
+
+    # Upload exactly one CSV
+    roster_file = st.file_uploader("Upload a Roster CSV",type=["csv"],accept_multiple_files=False,key="roster_upload")
+    
+    if not roster_file:
+        st.stop()
+
+    # Read the CSV
+    df = pd.read_csv(roster_file, dtype=str)
+
+    # Only keep the columns you care about
+    cols = [
+    "documentation_submission_2_timestamp", "email_2", "age_v2", "visit_date_v2", "setting_v2", "chief_v2", "cc_v2",
+    "historian_v2", "super_clinician_v2", "historyofpresentillness_v2", "reviewofsystems_v2", "hpi_v2", "ros_v2",
+    "pmhx_v2", "pshx_v2", "birthhx_v2", "famhx_v2", "socialhx_v2", "meds_v2", "imm_v2", "allg_v2", "diet_v2", "dev_v2",
+    "addhx_v2", "soc_hx_features_v2", "all_v2", "med_v2", "temp_v2", "hr_v2", "rr_v2", "pulseox_v2", "sbp_v2", "dbp_v2",
+    "weight_v2", "weighttile_v2", "height_v2", "heighttile_v2", "bmi_v2", "bmitile_v2", "vs_v2", "physicalexam_v2",
+    "pe_v2", "dxs_v2", "dxstud_v2", "probrep_v2", "probstatement_v2", "mostlikelydiagnosis_v2",
+    "seclikelydiagnosis_v2", "thirlikelydiagnosis_v2", "mostlikelydiagnosisj_v2", "seclikelydiagnosisj_v2",
+    "thirlikelydiagnosisj_v2", "diffdx_v2", "txplan_v2", "probid_v2", "plan_v2", "grammar_v2", "hpiwordcount_v2",
+    "hpiwords_v2", "score_v2", "scorep_v2", "doccomment_v2"]
+
+    missing = set(cols) - set(df.columns)
+    if missing:
+        st.error(f"Missing expected columns: {', '.join(missing)}")
+        st.stop()
+    df = df[cols].copy()
+
+    df = df.rename(columns={"email_2": "record_id", "documentation_submission_2_timestamp":"peddoclate2"})
+
+    df["peddoclate2"] = pd.to_datetime(df["peddoclate2"]).dt.strftime("%m-%d-%Y")
+
+    # Preview in Streamlit
+    st.dataframe(df, height=400)
+
+    # Drop rows with missing record_id
+    df = df[df["record_id"].notna() & (df["record_id"].str.strip() != "")]
+
+    cols = ["record_id"] + [col for col in df.columns if col != "record_id"]
+    df = df[cols]
+
+    # Offer as CSV download
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    st.download_button(label="📥 Download Documentation Submission #2",data=csv_bytes,file_name="docsubmit1.csv",mime="text/csv")
     
 elif instrument == "Roster":
     st.header("🔖 Roster")
