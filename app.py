@@ -511,24 +511,27 @@ elif instrument == "SDOH Form":
         errors="coerce"
     )
 
-    # Group by email and take the maximum SDOH score for duplicates
-    df_grouped = (
-        df
-        .groupby("email_2", as_index=False)
-        .agg({"social_drivers_of_health_sdoh_assessment_form_complete": "max"})
-    )
+    # Keep the row with the max value for each email_2
+    df = df.sort_values("social_drivers_of_health_sdoh_assessment_form_complete", ascending=False)
+    df = df.drop_duplicates(subset=["email_2"], keep="first")
 
-    df_grouped = df_grouped[cols].copy().rename(columns={
-            "email_2": "record_id",
-            "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass",
-            "social_drivers_of_health_sdoh_assessment_form_timestamp": "sdoh_late"})
+    # Rename columns
+    df_grouped = df.rename(columns={
+        "email_2": "record_id",
+        "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass",
+        "social_drivers_of_health_sdoh_assessment_form_timestamp": "sdoh_late"
+    })
 
-    df_grouped["sdoh_late"] = df_grouped["sdoh_late"].dt.strftime("%m-%d-%Y")
-    
+    # Format the timestamp if possible
+    try:
+        df_grouped["sdoh_late"] = pd.to_datetime(df_grouped["sdoh_late"]).dt.strftime("%m-%d-%Y")
+    except Exception:
+        pass  # Skip formatting if parsing fails
+
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
-    # Offer as CSV download (or adapt to Word if you prefer)
+    # Offer as CSV download
     csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
     st.download_button(
         label="📥 Download email_2 + SDOH (max) CSV",
@@ -536,6 +539,7 @@ elif instrument == "SDOH Form":
         file_name="email2_sdoh_max.csv",
         mime="text/csv"
     )
+
 
 elif instrument == "Developmental Assessment Form":
     st.header("📧 Developmental Assessment Form")
@@ -553,45 +557,49 @@ elif instrument == "Developmental Assessment Form":
     # Read the CSV
     df = pd.read_csv(roster_file, dtype=str)
 
-    # Only keep the two columns you care about
-    cols = ["email_2", "developmental_assessment_of_patient_complete"]
+    # Only keep the columns you care about
+    cols = ["email_2", "developmental_assessment_of_patient_timestamp", "developmental_assessment_of_patient_complete"]
     missing = set(cols) - set(df.columns)
     if missing:
         st.error(f"Missing expected columns: {', '.join(missing)}")
         st.stop()
     df = df[cols].copy()
 
-    # Convert the SDOH-complete column to numeric, so max() works
+    # Convert the complete column to numeric
     df["developmental_assessment_of_patient_complete"] = pd.to_numeric(
         df["developmental_assessment_of_patient_complete"],
         errors="coerce"
     )
 
-    # Group by email and take the maximum SDOH score for duplicates
-    df_grouped = (
-        df
-        .groupby("email_2", as_index=False)
-        .agg({"developmental_assessment_of_patient_complete": "max"})
-    )
+    # Keep the row with the max complete value per email_2
+    df = df.sort_values("developmental_assessment_of_patient_complete", ascending=False)
+    df = df.drop_duplicates(subset=["email_2"], keep="first")
 
-    df_grouped = df_grouped[cols].copy().rename(columns={
-            "email_2": "record_id",
-            "developmental_assessment_of_patient_complete": "devass",
-            "developmental_assessment_of_patient_timestamp": "dev_late"})
+    # Rename columns
+    df_grouped = df.rename(columns={
+        "email_2": "record_id",
+        "developmental_assessment_of_patient_complete": "devass",
+        "developmental_assessment_of_patient_timestamp": "dev_late"
+    })
 
-    df_grouped["dev_late"] = df_grouped["dev_late"].dt.strftime("%m-%d-%Y")
-    
+    # Format the timestamp column
+    try:
+        df_grouped["dev_late"] = pd.to_datetime(df_grouped["dev_late"]).dt.strftime("%m-%d-%Y")
+    except Exception:
+        pass  # Skip formatting if parsing fails
+
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
-    # Offer as CSV download (or adapt to Word if you prefer)
+    # Offer as CSV download
     csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download email_2 + SDOH (max) CSV",
+        label="📥 Download record_id + Developmental (max) CSV",
         data=csv_bytes,
         file_name="email2_dev_max.csv",
         mime="text/csv"
     )
+
 
     
 elif instrument == "Roster":
