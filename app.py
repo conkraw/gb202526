@@ -657,7 +657,7 @@ elif instrument == "Documentation Submission #1":
     df = df[cols]
 
     # Offer as CSV download
-    csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(label="📥 Download Documentation Submission #1",data=csv_bytes,file_name="docsubmit1.csv",mime="text/csv")
 
     
