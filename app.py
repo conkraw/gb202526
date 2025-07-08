@@ -524,7 +524,7 @@ elif instrument == "SDOH Form":
 
     # Format the timestamp if possible
     try:
-        df_grouped["sdoh_late"] = pd.to_datetime(df_grouped["sdoh_late"]).dt.strftime("%m-%d-%Y")
+        df_grouped["submitted_sdoh"] = pd.to_datetime(df_grouped["submitted_sdoh"]).dt.strftime("%m-%d-%Y")
     except Exception:
         pass  # Skip formatting if parsing fails
 
@@ -584,7 +584,7 @@ elif instrument == "Developmental Assessment Form":
 
     # Format the timestamp column
     try:
-        df_grouped["dev_late"] = pd.to_datetime(df_grouped["dev_late"]).dt.strftime("%m-%d-%Y")
+        df_grouped["submitted_dev"] = pd.to_datetime(df_grouped["submitted_dev"]).dt.strftime("%m-%d-%Y")
     except Exception:
         pass  # Skip formatting if parsing fails
 
