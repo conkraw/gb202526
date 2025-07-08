@@ -519,7 +519,8 @@ elif instrument == "SDOH Form":
     )
 
     df_grouped = df_grouped[cols].copy().rename(columns={
-            "email_2": "record_id"})
+            "email_2": "record_id",
+            "social_drivers_of_health_sdoh_assessment_form_complete": "sdoh_ass"})
 
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
