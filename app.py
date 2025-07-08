@@ -519,7 +519,7 @@ elif instrument == "SDOH Form":
     df_grouped = df.rename(columns={
         "email_2": "record_id",
         "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass",
-        "social_drivers_of_health_sdoh_assessment_form_timestamp": "sdoh_late"
+        "social_drivers_of_health_sdoh_assessment_form_timestamp": "submitted_sdoh"
     })
 
     # Format the timestamp if possible
@@ -579,7 +579,7 @@ elif instrument == "Developmental Assessment Form":
     df_grouped = df.rename(columns={
         "email_2": "record_id",
         "developmental_assessment_of_patient_complete": "devass",
-        "developmental_assessment_of_patient_timestamp": "dev_late"
+        "developmental_assessment_of_patient_timestamp": "submitted_dev"
     })
 
     # Format the timestamp column
