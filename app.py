@@ -520,7 +520,7 @@ elif instrument == "SDOH Form":
 
     df_grouped = df_grouped[cols].copy().rename(columns={
             "email_2": "record_id",
-            "social_drivers_of_health_sdoh_assessment_form_complete": "sdoh_ass"})
+            "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass"})
 
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
@@ -570,6 +570,11 @@ elif instrument == "Developmental Assessment Form":
         .groupby("email_2", as_index=False)
         .agg({"developmental_assessment_of_patient_complete": "max"})
     )
+
+    df_grouped = df_grouped[cols].copy().rename(columns={
+            "email_2": "record_id",
+            "developmental_assessment_of_patient_complete": "devass"})
+
 
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
