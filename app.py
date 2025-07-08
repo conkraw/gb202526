@@ -637,13 +637,13 @@ elif instrument == "Documentation Submission #1":
         "hpiwords_v1", "score_v1", "scorep_v1", "doccomment_v1"
     ]
 
-    df = df.rename(columns={"email_2": "record_id", "documentation_submission_1_timestamp":"peddoclate1"})
-
     missing = set(cols) - set(df.columns)
     if missing:
         st.error(f"Missing expected columns: {', '.join(missing)}")
         st.stop()
     df = df[cols].copy()
+
+    df = df.rename(columns={"email_2": "record_id", "documentation_submission_1_timestamp":"peddoclate1"})
 
     df["peddoclate1"] = pd.to_datetime(df_grouped["peddoclate1"]).dt.strftime("%m-%d-%Y")
 
