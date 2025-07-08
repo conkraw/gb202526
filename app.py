@@ -518,6 +518,9 @@ elif instrument == "SDOH Form":
         .agg({"social_drivers_of_health_sdoh_assessment_form_complete": "max"})
     )
 
+    df_grouped = df_grouped[cols].copy().rename(columns={
+            "email_2": "record_id"})
+
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
