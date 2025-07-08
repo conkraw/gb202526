@@ -14,7 +14,7 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster", "Weekly Quiz Reports"]
+    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster", "SDOH Form", "Developmental Assessment Form", "Weekly Quiz Reports"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -479,8 +479,106 @@ elif instrument == "Weekly Quiz Reports":
         file_name="weekly_quiz_formatted.csv",
         mime="text/csv",
     )
-      
-        
+
+
+elif instrument == "SDOH Form":
+    st.header("📧 SDOH Form")
+
+    # Upload exactly one CSV
+    roster_file = st.file_uploader(
+        "Upload a Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster_upload"
+    )
+    if not roster_file:
+        st.stop()
+
+    # Read the CSV
+    df = pd.read_csv(roster_file, dtype=str)
+
+    # Only keep the two columns you care about
+    cols = ["email_2", "social_drivers_of_health_sdoh_assessment_form_complete"]
+    missing = set(cols) - set(df.columns)
+    if missing:
+        st.error(f"Missing expected columns: {', '.join(missing)}")
+        st.stop()
+    df = df[cols].copy()
+
+    # Convert the SDOH-complete column to numeric, so max() works
+    df["social_drivers_of_health_sdoh_assessment_form_complete"] = pd.to_numeric(
+        df["social_drivers_of_health_sdoh_assessment_form_complete"],
+        errors="coerce"
+    )
+
+    # Group by email and take the maximum SDOH score for duplicates
+    df_grouped = (
+        df
+        .groupby("email_2", as_index=False)
+        .agg({"social_drivers_of_health_sdoh_assessment_form_complete": "max"})
+    )
+
+    # Preview in Streamlit
+    st.dataframe(df_grouped, height=400)
+
+    # Offer as CSV download (or adapt to Word if you prefer)
+    csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Download email_2 + SDOH (max) CSV",
+        data=csv_bytes,
+        file_name="email2_sdoh_max.csv",
+        mime="text/csv"
+    )
+
+elif instrument == "Developmental Assessment Form":
+    st.header("📧 Developmental Assessment Form")
+
+    # Upload exactly one CSV
+    roster_file = st.file_uploader(
+        "Upload a Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster_upload"
+    )
+    if not roster_file:
+        st.stop()
+
+    # Read the CSV
+    df = pd.read_csv(roster_file, dtype=str)
+
+    # Only keep the two columns you care about
+    cols = ["email_2", "developmental_assessment_of_patient_complete"]
+    missing = set(cols) - set(df.columns)
+    if missing:
+        st.error(f"Missing expected columns: {', '.join(missing)}")
+        st.stop()
+    df = df[cols].copy()
+
+    # Convert the SDOH-complete column to numeric, so max() works
+    df["developmental_assessment_of_patient_complete"] = pd.to_numeric(
+        df["developmental_assessment_of_patient_complete"],
+        errors="coerce"
+    )
+
+    # Group by email and take the maximum SDOH score for duplicates
+    df_grouped = (
+        df
+        .groupby("email_2", as_index=False)
+        .agg({"developmental_assessment_of_patient_complete": "max"})
+    )
+
+    # Preview in Streamlit
+    st.dataframe(df_grouped, height=400)
+
+    # Offer as CSV download (or adapt to Word if you prefer)
+    csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Download email_2 + SDOH (max) CSV",
+        data=csv_bytes,
+        file_name="email2_dev_max.csv",
+        mime="text/csv"
+    )
+
     
 elif instrument == "Roster":
     st.header("🔖 Roster")
