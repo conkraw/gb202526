@@ -498,7 +498,7 @@ elif instrument == "SDOH Form":
     df = pd.read_csv(roster_file, dtype=str)
 
     # Only keep the two columns you care about
-    cols = ["email_2", "social_drivers_of_health_sdoh_assessment_form_complete"]
+    cols = ["email_2", "social_drivers_of_health_sdoh_assessment_form_timestamp", "social_drivers_of_health_sdoh_assessment_form_complete"]
     missing = set(cols) - set(df.columns)
     if missing:
         st.error(f"Missing expected columns: {', '.join(missing)}")
@@ -520,8 +520,11 @@ elif instrument == "SDOH Form":
 
     df_grouped = df_grouped[cols].copy().rename(columns={
             "email_2": "record_id",
-            "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass"})
+            "social_drivers_of_health_sdoh_assessment_form_complete": "sdohass",
+            "social_drivers_of_health_sdoh_assessment_form_timestamp": "sdoh_late"})
 
+    df_grouped["sdoh_late"] = df_grouped["sdoh_late"].dt.strftime("%m-%d-%Y")
+    
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
@@ -573,9 +576,11 @@ elif instrument == "Developmental Assessment Form":
 
     df_grouped = df_grouped[cols].copy().rename(columns={
             "email_2": "record_id",
-            "developmental_assessment_of_patient_complete": "devass"})
+            "developmental_assessment_of_patient_complete": "devass",
+            "developmental_assessment_of_patient_timestamp": "dev_late"})
 
-
+    df_grouped["dev_late"] = df_grouped["dev_late"].dt.strftime("%m-%d-%Y")
+    
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
