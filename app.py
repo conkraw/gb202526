@@ -531,6 +531,10 @@ elif instrument == "SDOH Form":
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
+    # Drop rows with missing record_id
+    df_grouped = df_grouped[df_grouped["record_id"].notna() & (df_grouped["record_id"].str.strip() != "")]
+
+    
     # Offer as CSV download
     csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
     st.download_button(
@@ -591,6 +595,10 @@ elif instrument == "Developmental Assessment Form":
     # Preview in Streamlit
     st.dataframe(df_grouped, height=400)
 
+    # Drop rows with missing record_id
+    df_grouped = df_grouped[df_grouped["record_id"].notna() & (df_grouped["record_id"].str.strip() != "")]
+
+    
     # Offer as CSV download
     csv_bytes = df_grouped.to_csv(index=False).encode("utf-8")
     st.download_button(
