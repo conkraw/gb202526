@@ -645,7 +645,7 @@ elif instrument == "Documentation Submission #1":
 
     df = df.rename(columns={"email_2": "record_id", "documentation_submission_1_timestamp":"peddoclate1"})
 
-    df["peddoclate1"] = pd.to_datetime(df_grouped["peddoclate1"]).dt.strftime("%m-%d-%Y")
+    df["peddoclate1"] = pd.to_datetime(df["peddoclate1"]).dt.strftime("%m-%d-%Y")
 
     # Preview in Streamlit
     st.dataframe(df, height=400)
