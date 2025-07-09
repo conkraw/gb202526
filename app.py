@@ -83,7 +83,12 @@ if instrument == "OASIS Evaluation":
 elif instrument == "Practical Exam Codes #1":
     st.header("📋 Practical Exam Codes #1")
 
-    uploaded = st.file_uploader("Upload your Practical Examination #1 Distribution CSV and Practical Exam Code List",type="csv",accept_multiple_files=True,key="pe_codes_1")
+    uploaded = st.file_uploader(
+        "Upload your Practical Examination #1 Distribution CSV and Practical Exam Code List",
+        type="csv",
+        accept_multiple_files=True,
+        key="pe_codes_1"
+    )
 
     if not uploaded:
         st.stop()
@@ -95,18 +100,21 @@ elif instrument == "Practical Exam Codes #1":
     # Read both files
     dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
 
-    # Identify which file has 'Survey Access Code' column and rename it
-    for i, df in enumerate(dfs):
+    # Identify which file has 'Survey Access Code'
+    for df in dfs:
         if "Survey Access Code" in df.columns:
             df.rename(columns={"Survey Access Code": "code_p1"}, inplace=True)
             df_participant = df
         else:
+            # Drop code_p1 and code_p2 if they exist in the distribution file
+            df.drop(columns=[col for col in ["code_p1", "code_p2"] if col in df.columns], inplace=True)
             df_distribution = df
 
-    # Merge the two dataframes on 'code_p1'
+    # Merge on 'code_p1'
     df_merged = pd.merge(df_distribution, df_participant, on="code_p1", how="left")
 
     st.dataframe(df_merged)
+
 
 
 
