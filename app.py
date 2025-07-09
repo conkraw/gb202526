@@ -116,11 +116,37 @@ elif instrument == "Practical Exam Codes #1":
 
     st.dataframe(df_combined)
 
+    st.download_button("📥 Download record_id + code_p1 CSV", df_combined.to_csv(index=False).encode("utf-8"), file_name="record_id_code_p1.csv", mime="text/csv")
 
+elif instrument == "Practical Exam Codes #2":
+    st.header("📋 Practical Exam Codes #2")
 
+    uploaded = st.file_uploader("Upload the Participant File and the Practical Exam Code File",type="csv",accept_multiple_files=True,key="pe_codes_2")
 
+    if not uploaded:
+        st.stop()
 
-#elif instrument == "Practical Exam Codes #2":
+    if len(uploaded) != 2:
+        st.warning("Please upload exactly two CSV files.")
+        st.stop()
+
+    # Load the files
+    dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
+
+    # Identify which file has which column
+    df_code = next(df for df in dfs if "Survey Access Code" in df.columns)
+    df_id = next(df for df in dfs if "record_id" in df.columns)
+
+    # Extract the columns
+    code_series = df_code["Survey Access Code"].reset_index(drop=True)
+    id_series = df_id["record_id"].reset_index(drop=True)
+
+    # Combine into one DataFrame
+    df_combined = pd.DataFrame({"record_id": id_series,"code_p2": code_series})
+
+    st.dataframe(df_combined)
+
+    st.download_button("📥 Download record_id + code_p2 CSV", df_combined.to_csv(index=False).encode("utf-8"), file_name="record_id_code_p1.csv", mime="text/csv")
     
 elif instrument == "Checklist Entry":
     st.header("🔖 Checklist Entry Merger")
