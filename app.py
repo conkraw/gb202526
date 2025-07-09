@@ -414,7 +414,8 @@ elif instrument == "Preceptor Matching":
 
 elif instrument == "Email Record Mapper":
     st.header("📧 Email Record Mapper")
-
+    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
+    
     # Upload exactly one Roster CSV
     roster_file = st.file_uploader(
         "Upload a Roster CSV",
