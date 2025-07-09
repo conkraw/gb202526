@@ -75,7 +75,9 @@ if instrument == "OASIS Evaluation":
 
     # 8) remove student & location
     df = df.drop(columns=["student","location","start_date","end_date","location"]) #Cannot have these columns in the repeating instrument. 
-                      
+
+    df["oasis_eval_complete"] = 2 
+    
     st.dataframe(df, height=400)
     st.download_button(
         "📥 Download formatted OASIS CSV",
@@ -250,6 +252,8 @@ elif instrument == "Checklist Entry":
 
     # Now drop unnecessary columns
     df_cl = df_cl.drop(columns=["email", "date", "start_date"])
+
+    df_cl["checklist_entry_complete"] = 2
 
     # Show + download
     st.dataframe(df_cl, height=400)
