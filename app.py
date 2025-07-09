@@ -709,7 +709,7 @@ elif instrument == "Documentation Submission #2":
     
 elif instrument == "Roster_HMC":
     st.header("🔖 Roster_HMC")
-    st.markdown("[🔗 Open KP Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
+    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
     # upload exactly one CSV
     roster_file = st.file_uploader("Upload exactly one Roster CSV",type=["csv"],accept_multiple_files=False,key="roster")
@@ -867,7 +867,7 @@ elif instrument == "Roster_HMC":
 
 elif instrument == "Roster_KP":
     st.header("🔖 Roster KP")
-    st.markdown("[🔗 Open KP Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
+    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
     # upload exactly one CSV
     roster_file = st.file_uploader("Upload exactly one Roster CSV",type=["csv"],accept_multiple_files=False,key="roster")
