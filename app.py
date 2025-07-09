@@ -84,7 +84,7 @@ elif instrument == "Practical Exam Codes #1":
     st.header("📋 Practical Exam Codes #1")
 
     uploaded = st.file_uploader(
-        "Upload your Practical Examination #1 Distribution CSV and Practical Exam Code List",
+        "Upload the Participant File and the Practical Exam Code File",
         type="csv",
         accept_multiple_files=True,
         key="pe_codes_1"
@@ -94,26 +94,27 @@ elif instrument == "Practical Exam Codes #1":
         st.stop()
 
     if len(uploaded) != 2:
-        st.warning("Please upload *exactly* two CSV files here.")
+        st.warning("Please upload exactly two CSV files.")
         st.stop()
 
-    # Read both files
+    # Load the files
     dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
 
-    # Identify which file has 'Survey Access Code'
-    for df in dfs:
-        if "Survey Access Code" in df.columns:
-            df.rename(columns={"Survey Access Code": "code_p1"}, inplace=True)
-            df_participant = df
-        else:
-            # Drop code_p1 and code_p2 if they exist in the distribution file
-            df.drop(columns=[col for col in ["code_p1", "code_p2"] if col in df.columns], inplace=True)
-            df_distribution = df
+    # Identify which file has which column
+    df_code = next(df for df in dfs if "Survey Access Code" in df.columns)
+    df_id = next(df for df in dfs if "record_id" in df.columns)
 
-    # Merge on 'code_p1'
-    df_merged = pd.merge(df_distribution, df_participant, on="code_p1", how="left")
+    # Extract the columns
+    code_series = df_code["Survey Access Code"].reset_index(drop=True)
+    id_series = df_id["record_id"].reset_index(drop=True)
 
-    st.dataframe(df_merged)
+    # Combine into one DataFrame
+    df_combined = pd.DataFrame({
+        "record_id": id_series,
+        "code_p1": code_series
+    })
+
+    st.dataframe(df_combined)
 
 
 
