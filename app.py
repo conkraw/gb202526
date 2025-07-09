@@ -20,7 +20,7 @@ instrument = st.sidebar.selectbox(
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
-    st.markdown("[Open OASIS Evaluation Setup](https://oasis.pennstatehealth.net/admin/course/e_manage/student_performance/setup_analysis_report.html)")
+    st.markdown("[Open OASIS Clinical Assessment of Student Setup](https://oasis.pennstatehealth.net/admin/course/e_manage/student_performance/setup_analysis_report.html)")
 
     uploaded = st.file_uploader("Upload your raw OASIS CSV", type="csv", key="oasis")
     if not uploaded:
