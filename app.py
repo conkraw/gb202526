@@ -224,6 +224,7 @@ elif instrument == "Checklist Entry":
     # Add empty submitted_ce columns to df_cl so they exist for reordering
     df_cl["submitted_ce"] = ""
     df_cl["submitted_ce_min"] = ""
+    df_cl["checklist_entry_complete"] = 2
 
     # Create summary rows (non-repeating)
     df_summary = pd.DataFrame({
@@ -231,7 +232,8 @@ elif instrument == "Checklist Entry":
         "submitted_ce": submitted_max.values,
         "submitted_ce_min": submitted_min.values,
         "redcap_repeat_instrument": "",
-        "redcap_repeat_instance": ""
+        "redcap_repeat_instance": "",
+        "checklist_entry_complete": "",
     })
 
     # Add missing columns to match df_cl
@@ -252,8 +254,6 @@ elif instrument == "Checklist Entry":
 
     # Now drop unnecessary columns
     df_cl = df_cl.drop(columns=["email", "date", "start_date"])
-
-    df_cl["checklist_entry_complete"] = 2
 
     # Show + download
     st.dataframe(df_cl, height=400)
