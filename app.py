@@ -14,7 +14,8 @@ st.title("🔄 REDCap Instruments Formatter")
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster_HMC", "Roster_KP", "SDOH Form", "Developmental Assessment Form", "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2"]
+    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster_HMC", "Roster_KP", "SDOH Form", "Developmental Assessment Form", 
+     "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2", "Practical Exam Codes #1", "Practical Exam Codes #2"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -79,15 +80,23 @@ if instrument == "OASIS Evaluation":
         mime="text/csv",
     )
 
+elif instrument == "Practical Exam Codes #1":
+    st.header("📋 Practical Exam Codes #1")
+    uploaded = st.file_uploader("Upload your Practical Examination #1 Distribution CSV", type="csv", key="pecodes_1")
+    if not uploaded:
+        st.stop()
+    
+    df = pd.read_csv(uploaded, dtype=str)
 
+    st.dataframe(df)
+
+
+
+#elif instrument == "Practical Exam Codes #2":
+    
 elif instrument == "Checklist Entry":
     st.header("🔖 Checklist Entry Merger")
-    uploaded = st.file_uploader(
-        "Upload exactly two checklist CSVs",
-        type="csv",
-        accept_multiple_files=True,
-        key="clist"
-    )
+    uploaded = st.file_uploader("Upload exactly two checklist CSVs",type="csv",accept_multiple_files=True,key="clist")
     if not uploaded:
         st.stop()
     if len(uploaded) != 2:
