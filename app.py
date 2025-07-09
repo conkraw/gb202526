@@ -20,6 +20,8 @@ instrument = st.sidebar.selectbox(
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
+    st.markdown("[Open OASIS Evaluation Setup](https://oasis.pennstatehealth.net/admin/course/e_manage/student_performance/setup_analysis_report.html)")
+
     uploaded = st.file_uploader("Upload your raw OASIS CSV", type="csv", key="oasis")
     if not uploaded:
         st.stop()
@@ -150,6 +152,8 @@ elif instrument == "Practical Exam Codes #2":
     
 elif instrument == "Checklist Entry":
     st.header("🔖 Checklist Entry Merger")
+    st.markdown("[Open Clinical Encounters Requirement](https://oasis.pennstatehealth.net/admin/course/experience_requirement/view_distribution_setup.html)")
+
     uploaded = st.file_uploader("Upload exactly two checklist CSVs",type="csv",accept_multiple_files=True,key="clist")
     if not uploaded:
         st.stop()
@@ -259,6 +263,7 @@ elif instrument == "Checklist Entry":
 
 elif instrument == "NBME Scores":
     st.header("🔖 NBME")
+    st.markdown("[Open OASIS Gradebook](https://oasis.pennstatehealth.net/admin/course/gradebook/)")
 
     # upload exactly one Excel file
     nbme_file = st.file_uploader(
@@ -311,6 +316,7 @@ elif instrument == "NBME Scores":
 
 elif instrument == "Preceptor Matching":
     st.header("🔖 Preceptor Matching")
+    st.markdown("[OASIS Preceptor Matching](https://oasis.pennstatehealth.net/admin/course/e_manage/manage_evaluators.html)")
 
     # upload exactly one CSV
     preceptor_file = st.file_uploader(
@@ -463,6 +469,10 @@ elif instrument == "Email Record Mapper":
     
 elif instrument == "Weekly Quiz Reports":
     st.header("🔖 Weekly Quiz Reports")
+    st.markdown("[Open Canvas Quiz Statistics](https://psu.instructure.com/courses/2391216/quizzes/5215346/statistics)")
+    st.markdown("[Open Second Canvas Quiz Statistics](https://psu.instructure.com/courses/2391216/quizzes/5215347/statistics)")
+    st.markdown("[Open Third Canvas Quiz Statistics](https://psu.instructure.com/courses/2391216/quizzes/5215343/statistics)")
+    st.markdown("[Open Fourth Canvas Quiz Statistics](https://psu.instructure.com/courses/2391216/quizzes/5215345/statistics)")
 
     # 1) Upload exactly four CSVs
     uploaded = st.file_uploader(
