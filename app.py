@@ -264,20 +264,18 @@ elif instrument == "Checklist Entry":
 # ─── NBME Score ─────────────────────────────────────────────────────────────
 
 elif instrument == "NBME Scores":
+    #Title of Page with Website Links. 
     st.header("🔖 NBME")
     st.markdown("[Open OASIS Gradebook](https://oasis.pennstatehealth.net/admin/course/gradebook/)")
 
-    # upload exactly one Excel file
-    nbme_file = st.file_uploader(
-        "Upload exactly one NBME XLSX",
-        type=["xlsx"],
-        accept_multiple_files=False,
-        key="nbme"
-    )
+    # Upload exactly one Excel file
+    nbme_file = st.file_uploader("Upload exactly one NBME XLSX",type=["xlsx"],accept_multiple_files=False,key="nbme")
+
+    # Stops code if no file or if wrong file is present. 
     if not nbme_file:
         st.stop()
 
-    # read the specific worksheet
+    # read the specific worksheet - NBME worksheet has two sheet, it will read the workbook and find the sheet that we want. 
     df_nbme = pd.read_excel(nbme_file, sheet_name="GradeBook", dtype=str)
 
     # rename only the nine columns you need
@@ -293,28 +291,22 @@ elif instrument == "NBME Scores":
         "NBME Exam Grade":                "grade_nbme",
         "Final Course Grade":             "final_course_grade",
     }
+
+    # Executes Renaming
     df_nbme = df_nbme.rename(columns=rename_map_nbme)
 
     # keep only those nine columns, in that order
     df_nbme = df_nbme[list(rename_map_nbme.values())]
 
-    # move external_id → record_id up front
+    # Rename external_id to record_id... this is your key.
+    # move external_id → record_id up front 
     df_nbme = df_nbme.rename(columns={"external_id": "record_id"})
     cols = ["record_id"] + [c for c in df_nbme.columns if c != "record_id"]
     df_nbme = df_nbme[cols]
     
-    # add REDCap repeater
-    df_nbme["redcap_repeat_instrument"] = "oasis_eval"
-    df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
-    
     # preview + download
     st.dataframe(df_nbme, height=400)
-    st.download_button(
-        "📥 Download formatted NBME XLSX → CSV",
-        df_nbme.to_csv(index=False).encode("utf-8"),
-        file_name="nbme_scores_formatted.csv",
-        mime="text/csv",
-    )
+    st.download_button("📥 Download formatted NBME XLSX → CSV",df_nbme.to_csv(index=False).encode("utf-8"),file_name="nbme_scores_formatted.csv",mime="text/csv")
 
 elif instrument == "Preceptor Matching":
     st.header("🔖 Preceptor Matching")
