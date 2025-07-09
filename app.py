@@ -556,6 +556,7 @@ elif instrument == "Weekly Quiz Reports":
 
 elif instrument == "SDOH Form":
     st.header("📧 SDOH Form")
+    st.markdown("[Open REDCap Report](https://redcap.ctsi.psu.edu/redcap_v15.0.26/DataExport/index.php?pid=17086&report_id=63923)")
 
     # Upload exactly one CSV
     roster_file = st.file_uploader(
@@ -620,6 +621,7 @@ elif instrument == "SDOH Form":
 
 elif instrument == "Developmental Assessment Form":
     st.header("📧 Developmental Assessment Form")
+    st.markdown("[Open Second REDCap Report](https://redcap.ctsi.psu.edu/redcap_v15.0.26/DataExport/index.php?pid=17354&report_id=60308)")
 
     # Upload exactly one CSV
     roster_file = st.file_uploader(
