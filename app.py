@@ -307,6 +307,10 @@ elif instrument == "NBME Scores":
     df_nbme = df_nbme.rename(columns={"external_id": "record_id"})
     cols = ["record_id"] + [c for c in df_nbme.columns if c != "record_id"]
     df_nbme = df_nbme[cols]
+
+    # add REDCap repeater fields
+    df_nbme["redcap_repeat_instrument"] = "oasis_eval"
+    df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
     
     # preview + download
     st.dataframe(df_nbme, height=400)
