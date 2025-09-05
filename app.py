@@ -1102,24 +1102,65 @@ elif instrument == "Roster_KP":
 
 elif instrument == "Open PCAPs":
     st.header("📋 Open PCAPs")
-    uploaded = st.file_uploader("Rotation List",type="csv",accept_multiple_files=False,key="open_pcap")
+    uploaded = st.file_uploader("Rotation List (CSV with a 'record_id' column)",
+                                type="csv", accept_multiple_files=False, key="open_pcap")
 
-    pcap = pd.read_csv(uploaded, dtype=str)
-    pcap = pcap[['record_id']]
-    pcap['pediatric_clerkship_achievement_portfolio_complete'] = 0
-    
-    st.dataframe(pcap, height=400)
-    st.download_button("📥 Download formatted Open PCAP",pcap.to_csv(index=False).encode("utf-8"),file_name="open_pcap.csv",mime="text/csv")
+    if uploaded is None:
+        st.info("Upload a CSV to format the Open PCAP file.")
+    elif getattr(uploaded, "size", 0) == 0:
+        st.error("The uploaded file is empty.")
+    else:
+        try:
+            # Try normal UTF-8 (handles BOM with utf-8-sig)
+            pcap = pd.read_csv(uploaded, dtype=str, encoding="utf-8-sig")
+        except Exception:
+            # Reset pointer and try delimiter sniffing
+            uploaded.seek(0)
+            pcap = pd.read_csv(uploaded, dtype=str, sep=None, engine="python", encoding="utf-8-sig")
+
+        if "record_id" not in pcap.columns:
+            st.error(f"Missing 'record_id' column. Found columns: {list(pcap.columns)}")
+            st.dataframe(pcap.head(20))
+        else:
+            pcap = pcap[["record_id"]].copy()
+            pcap["pediatric_clerkship_achievement_portfolio_complete"] = 0
+            st.dataframe(pcap, height=400)
+            st.download_button(
+                "📥 Download formatted Open PCAP",
+                pcap.to_csv(index=False).encode("utf-8"),
+                file_name="open_pcap.csv",
+                mime="text/csv",
+            )
 
 elif instrument == "Close PCAPs":
     st.header("📋 Close PCAPs")
-    uploaded = st.file_uploader("Rotation List",type="csv",accept_multiple_files=False,key="close_pcap")
-    
-    pcap = pd.read_csv(uploaded, dtype=str)
-    pcap = pcap[['record_id']]
-    pcap['pediatric_clerkship_achievement_portfolio_complete'] = 2
-    
-    st.dataframe(pcap, height=400)
-    st.download_button("📥 Download formatted Closed PCAP",pcap.to_csv(index=False).encode("utf-8"),file_name="open_pcap.csv",mime="text/csv")
+    uploaded = st.file_uploader("Rotation List (CSV with a 'record_id' column)",
+                                type="csv", accept_multiple_files=False, key="close_pcap")
+
+    if uploaded is None:
+        st.info("Upload a CSV to format the Closed PCAP file.")
+    elif getattr(uploaded, "size", 0) == 0:
+        st.error("The uploaded file is empty.")
+    else:
+        try:
+            pcap = pd.read_csv(uploaded, dtype=str, encoding="utf-8-sig")
+        except Exception:
+            uploaded.seek(0)
+            pcap = pd.read_csv(uploaded, dtype=str, sep=None, engine="python", encoding="utf-8-sig")
+
+        if "record_id" not in pcap.columns:
+            st.error(f"Missing 'record_id' column. Found columns: {list(pcap.columns)}")
+            st.dataframe(pcap.head(20))
+        else:
+            pcap = pcap[["record_id"]].copy()
+            pcap["pediatric_clerkship_achievement_portfolio_complete"] = 2
+            st.dataframe(pcap, height=400)
+            st.download_button(
+                "📥 Download formatted Closed PCAP",
+                pcap.to_csv(index=False).encode("utf-8"),
+                file_name="closed_pcap.csv",  # fixed filename
+                mime="text/csv",
+            )
+
 
 
