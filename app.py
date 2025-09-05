@@ -17,7 +17,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.0.
 instrument = st.sidebar.selectbox(
     "Select instrument", 
     ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster_HMC", "Roster_KP", "SDOH Form", "Developmental Assessment Form", 
-     "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2", "Practical Exam Codes #1", "Practical Exam Codes #2"]
+     "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2", "Practical Exam Codes #1", "Practical Exam Codes #2","Open PCAPs","Close PCAPs"]
 )
 
 if instrument == "OASIS Evaluation":
@@ -1098,5 +1098,28 @@ elif instrument == "Roster_KP":
     st.dataframe(df_roster, height=400)
     
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
+
+
+elif instrument == "Open PCAPs":
+    st.header("📋 Open PCAPs")
+    uploaded = st.file_uploader("Rotation List",type="csv",accept_multiple_files=False,key="open_pcap")
+
+    pcap = pd.read_csv(uploaded, dtype=str)
+    pcap = pcap[['record_id']]
+    pcap['pediatric_clerkship_achievement_portfolio_complete'] = 0
+    
+    st.dataframe(pcap, height=400)
+    st.download_button("📥 Download formatted Open PCAP",pcap.to_csv(index=False).encode("utf-8"),file_name="open_pcap.csv",mime="text/csv")
+
+elif instrument == "Close PCAPs":
+    st.header("📋 Close PCAPs")
+    uploaded = st.file_uploader("Rotation List",type="csv",accept_multiple_files=False,key="close_pcap")
+    
+    pcap = pd.read_csv(uploaded, dtype=str)
+    pcap = pcap[['record_id']]
+    pcap['pediatric_clerkship_achievement_portfolio_complete'] = 2
+    
+    st.dataframe(pcap, height=400)
+    st.download_button("📥 Download formatted Closed PCAP",pcap.to_csv(index=False).encode("utf-8"),file_name="open_pcap.csv",mime="text/csv")
 
 
