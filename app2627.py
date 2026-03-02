@@ -549,8 +549,15 @@ elif instrument == "Roster_HMC":
     
     df_roster["student_demographics_complete"] = 2 
     
-    # preview + download
-    st.dataframe(df_roster, height=400)
+
+    # --------- PREVIEW WITHOUT QUIZ COLUMNS ----------
+    preview_df = df_roster.drop(
+        columns=[c for c in df_roster.columns if c.startswith("quiz_due_")],
+        errors="ignore"
+    )
+    
+    st.dataframe(preview_df, height=400)
+
     
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
 
