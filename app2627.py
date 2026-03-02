@@ -523,14 +523,14 @@ elif instrument == "Roster_HMC":
     first_sunday   = df_roster["start_date"] + pd.to_timedelta(days_to_sunday, unit="D")
     
     # ─── 3) Create quiz_due_1 … quiz_due_4 ──────────────────────────────────────
-    for n in range(1, 5):
-        df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
+    #for n in range(1, 5):
+    #    df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
     
     # ─── 4) Alias assignment & doc-assignment due dates ─────────────────────────
-    df_roster["ass_middue_date"]   = df_roster["quiz_due_2"]
+    #df_roster["ass_middue_date"]   = df_roster["quiz_due_2"]
     df_roster["ass_due_date"]      = df_roster["quiz_due_4"]
-    df_roster["docass_due_date_1"] = df_roster["quiz_due_2"]
-    df_roster["docass_due_date_2"] = df_roster["quiz_due_4"]
+    #df_roster["docass_due_date_1"] = df_roster["quiz_due_2"]
+    #df_roster["docass_due_date_2"] = df_roster["quiz_due_4"]
     
     # ─── 5) Grade due date: 6 weeks after end_date ──────────────────────────────
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
@@ -542,6 +542,8 @@ elif instrument == "Roster_HMC":
         "docass_due_date_1","docass_due_date_2",
         "grade_due_date"
     ]
+    
+    due_cols = ["ass_due_date","grade_due_date"]
     
     for col in due_cols:
         df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
