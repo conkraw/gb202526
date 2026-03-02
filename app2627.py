@@ -172,7 +172,8 @@ elif instrument == "Checklist Entry":
     df_cl = pd.concat([df_cl, df_summary], ignore_index=True)
 
     # Move key columns to front
-    front_cols = ["record_id", "submitted_ce", "submitted_ce_min"]
+    #front_cols = ["record_id", "submitted_ce", "submitted_ce_min"]
+    front_cols = ["record_id", "submitted_ce"]
     rest_cols = [c for c in df_cl.columns if c not in front_cols]
     df_cl = df_cl[front_cols + rest_cols]
 
