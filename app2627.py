@@ -550,12 +550,12 @@ elif instrument == "Roster_HMC":
     df_roster["student_demographics_complete"] = 2 
     
 
-    # --------- PREVIEW WITHOUT QUIZ COLUMNS ----------
-    preview_df = df_roster.drop(
+    # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
+    df_roster = df_roster.drop(
         columns=[c for c in df_roster.columns if c.startswith("quiz_due_")],
         errors="ignore"
     )
-    
+
     st.dataframe(preview_df, height=400)
 
     
