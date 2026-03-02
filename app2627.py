@@ -641,11 +641,8 @@ elif instrument == "Roster_KP":
         df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
     
     # ─── 4) Alias assignment & doc-assignment due dates ─────────────────────────
-    df_roster["ass_middue_date"]   = df_roster["quiz_due_2"]
     df_roster["ass_due_date"]      = df_roster["quiz_due_4"]
-    df_roster["docass_due_date_1"] = df_roster["quiz_due_2"]
-    df_roster["docass_due_date_2"] = df_roster["quiz_due_4"]
-    
+
     # ─── 5) Grade due date: 6 weeks after end_date ──────────────────────────────
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
 
@@ -664,8 +661,11 @@ elif instrument == "Roster_KP":
     df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y")
     
     # preview + download
-    st.dataframe(df_roster, height=400)
-    
-    st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
 
+    # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
+    df_roster = df_roster.drop(columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],errors="ignore")
+
+    st.dataframe(df_roster, height=400)
+
+    st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
 
