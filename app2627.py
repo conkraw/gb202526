@@ -647,12 +647,7 @@ elif instrument == "Roster_KP":
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
 
     # ─── 6) Normalize all due dates to 23:59 with no seconds ─────────────────
-    due_cols = [
-        "quiz_due_1","quiz_due_2","quiz_due_3","quiz_due_4",
-        "ass_middue_date","ass_due_date",
-        "docass_due_date_1","docass_due_date_2",
-        "grade_due_date"
-    ]
+    due_cols = ["ass_due_date","grade_due_date"]
     
     for col in due_cols:
         df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
