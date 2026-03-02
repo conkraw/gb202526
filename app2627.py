@@ -88,9 +88,6 @@ elif instrument == "Checklist Entry":
     uploaded = st.file_uploader("Upload exactly two checklist CSVs",type="csv",accept_multiple_files=True,key="clist")
     if not uploaded:
         st.stop()
-    #if len(uploaded) != 2:
-    #    st.warning("Please upload *exactly* two CSV files here.")
-    #    st.stop()
 
     # Read + concat
     dfs = [pd.read_csv(f, dtype=str) for f in uploaded]
@@ -146,18 +143,18 @@ elif instrument == "Checklist Entry":
 
     # Group by record_id and compute max and min start_date
     submitted_max = df_cl.groupby("record_id")["time_entered"].max().dt.strftime("%m-%d-%Y")
-    submitted_min = df_cl.groupby("record_id")["time_entered"].min().dt.strftime("%m-%d-%Y")
+    #submitted_min = df_cl.groupby("record_id")["time_entered"].min().dt.strftime("%m-%d-%Y")
 
     # Add empty submitted_ce columns to df_cl so they exist for reordering
     df_cl["submitted_ce"] = ""
-    df_cl["submitted_ce_min"] = ""
+    #df_cl["submitted_ce_min"] = ""
     df_cl["checklist_entry_complete"] = 2
 
     # Create summary rows (non-repeating)
     df_summary = pd.DataFrame({
         "record_id": submitted_max.index,
         "submitted_ce": submitted_max.values,
-        "submitted_ce_min": submitted_min.values,
+        #"submitted_ce_min": submitted_min.values,
         "redcap_repeat_instrument": "",
         "redcap_repeat_instance": "",
         "checklist_entry_complete": "",
