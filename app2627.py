@@ -491,14 +491,29 @@ elif instrument == "Roster_HMC":
     
     df_roster["student_demographics_complete"] = 2 
     
-
     # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
     df_roster = df_roster.drop(columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],errors="ignore")
 
     st.dataframe(df_roster, height=400)
 
-    
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
+
+    # --------- BUILD ROTATION START DATE FILE ----------
+    rotation_reference = pd.DataFrame({
+        "rotation_code": [rotation_map[dt] for dt in unique_dates],
+        "start_date": [pd.to_datetime(dt).strftime("%m-%d-%Y") for dt in unique_dates]
+    })
+    rotation_text = "\n".join(
+    f"{row.rotation_code}, {row.start_date}"
+    for _, row in rotation_reference.iterrows()
+)
+
+    st.download_button(
+        "📥 Download Rotation Start Dates (.txt)",
+        rotation_text,
+        file_name="rotation_start_dates.txt",
+        mime="text/plain"
+    )
 
 elif instrument == "Roster_KP":
     st.header("🔖 Roster KP")
