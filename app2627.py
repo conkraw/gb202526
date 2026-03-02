@@ -509,7 +509,7 @@ elif instrument == "Roster_HMC":
 )
 
     st.download_button(
-        "📥 Download Rotation Start Dates (.txt)",
+        "📥 Download Rotation Start Dates For RedCap(.txt)",
         rotation_text,
         file_name="rotation_start_dates.txt",
         mime="text/plain"
