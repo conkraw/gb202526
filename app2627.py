@@ -16,9 +16,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.0.
 # choose which instrument you want to format
 instrument = st.sidebar.selectbox(
     "Select instrument", 
-    ["OASIS Evaluation", "Checklist Entry", "Email Record Mapper", "NBME Scores", "Preceptor Matching", "Roster_HMC", "Roster_KP", "SDOH Form", "Developmental Assessment Form", 
-     "Weekly Quiz Reports", "Documentation Submission #1", "Documentation Submission #2", "Practical Exam Codes #1", "Practical Exam Codes #2","Open PCAPs","Close PCAPs"]
-)
+    ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", ])
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
