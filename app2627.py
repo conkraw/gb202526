@@ -493,9 +493,7 @@ elif instrument == "Roster_HMC":
     
 
     # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
-    df_roster = df_roster.drop(
-        df_roster = df_roster.drop(
-            columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],errors="ignore")
+    df_roster = df_roster.drop(columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],errors="ignore")
 
     st.dataframe(df_roster, height=400)
 
