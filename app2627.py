@@ -337,64 +337,6 @@ elif instrument == "Preceptor Matching":
         mime="text/csv",
     )
 
-elif instrument == "Email Record Mapper":
-    st.header("📧 Email Record Mapper")
-    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
-    
-    # Upload exactly one Roster CSV
-    roster_file = st.file_uploader(
-        "Upload a Roster CSV",
-        type=["csv"],
-        accept_multiple_files=False,
-        key="roster_upload"
-    )
-    if not roster_file:
-        st.stop()
-
-    # Read the CSV
-    df_roster = pd.read_csv(roster_file, dtype=str)
-
-    # Rename only the needed columns
-    rename_map = {
-        "Email Address": "email",
-        "External ID": "record_id",
-    }
-    df_roster = df_roster.rename(columns=rename_map)
-
-    # Keep only relevant columns (you can customize this list)
-    keep_cols = ["record_id", "email"]
-    df_roster = df_roster[keep_cols]
-
-    # Remove rows with missing emails or record_id
-    df_roster = df_roster.dropna(subset=["record_id", "email"])
-
-    # Optional: Sort by student_name or record_id
-    df_roster = df_roster.sort_values(by="email")
-
-    # Preview and download
-    st.dataframe(df_roster, height=400)
-    # Create a Word doc in memory
-    doc = Document()
-    doc.add_heading('REDCap Dropdown: record_id, email', level=1)
-    
-    # Add each line as plain text
-    for _, row in df_roster.iterrows():
-        record_id = str(row['record_id']).strip()
-        email = str(row['email']).strip()
-        doc.add_paragraph(f"{record_id}, {email}")
-    
-    # Save to BytesIO
-    doc_io = BytesIO()
-    doc.save(doc_io)
-    doc_io.seek(0)
-
-    st.download_button(
-        label="📥 Download REDCap Dropdown (Word)",
-        data=doc_io,
-        file_name="email_roster_dropdown.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-    
 
 elif instrument == "Roster_HMC":
     st.header("🔖 Roster_HMC")
@@ -552,9 +494,8 @@ elif instrument == "Roster_HMC":
 
     # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
     df_roster = df_roster.drop(
-        columns=[c for c in df_roster.columns if c.startswith("quiz_due_")],
-        errors="ignore"
-    )
+        df_roster = df_roster.drop(
+            columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],errors="ignore")
 
     st.dataframe(df_roster, height=400)
 
