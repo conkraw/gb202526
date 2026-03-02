@@ -556,7 +556,7 @@ elif instrument == "Roster_HMC":
         errors="ignore"
     )
 
-    st.dataframe(preview_df, height=400)
+    st.dataframe(df_roster, height=400)
 
     
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
