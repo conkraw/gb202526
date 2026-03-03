@@ -516,7 +516,7 @@ elif instrument == "Roster_HMC":
     )
 
     # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
-    df_roster = (df_roster[['record_id','lastname', 'firstname', 'email', 'rotation','student_demographics_complete']].rename(columns={'lastname': 'last_name','firstname': 'first_name','student_demographics_complete': 'pediatric_clerkship_intake_form'}))
+    df_roster = (df_roster[['record_id','lastname', 'firstname', 'email', 'rotation','student_demographics_complete']].rename(columns={'lastname': 'last_name','firstname': 'first_name','student_demographics_complete': 'pediatric_clerkship_intake_form_complete'}))
     
     st.download_button("📥 Download roster_intake_form csv",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_intake_form.csv",mime="text/csv")
 
