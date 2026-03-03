@@ -515,6 +515,11 @@ elif instrument == "Roster_HMC":
         mime="text/plain"
     )
 
+    # --------- REMOVE QUIZ DUE COLUMNS COMPLETELY ----------
+    df_roster = df_roster[['last_name','first_name','email','rotation']]
+
+    st.download_button("📥 Download roster_intake_form csv",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_intake_form.csv",mime="text/csv")
+
 elif instrument == "Roster_KP":
     st.header("🔖 Roster KP")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
