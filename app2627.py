@@ -85,7 +85,7 @@ elif instrument == "Checklist Entry":
     st.header("🔖 Checklist Entry Merger")
     st.markdown("[Open Clinical Encounters Requirement](https://oasis.pennstatehealth.net/admin/course/experience_requirement/view_distribution_setup.html)")
 
-    uploaded = st.file_uploader("Upload exactly two checklist CSVs",type="csv",accept_multiple_files=True,key="clist")
+    uploaded = st.file_uploader("Upload exactly one checklist CSVs",type="csv",accept_multiple_files=True,key="clist")
     if not uploaded:
         st.stop()
 
