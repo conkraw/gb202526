@@ -236,7 +236,9 @@ elif instrument == "NBME Scores":
     # add REDCap repeater fields
     df_nbme["redcap_repeat_instrument"] = "oasis_eval"
     df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
-    
+
+    exclude = ['student_nbme', 'email_nbme', 'username', 'student_level_nbme', 'location_nbme', 'start_date_nbme', 'grade_nbme', 'final_course_grade']
+    df_nbme = df_nbme.drop(columns=exclude, errors='ignore')
     # preview + download
     st.dataframe(df_nbme, height=400)
     st.download_button("📥 Download formatted NBME XLSX → CSV",df_nbme.to_csv(index=False).encode("utf-8"),file_name="nbme_scores_formatted.csv",mime="text/csv")
