@@ -234,7 +234,7 @@ elif instrument == "NBME Scores":
     df_nbme = df_nbme[cols]
 
     # add REDCap repeater fields
-    df_nbme["redcap_repeat_instrument"] = "oasis_eval"
+    df_nbme["redcap_repeat_instrument"] = "nbme"
     df_nbme["redcap_repeat_instance"]   = df_nbme.groupby("record_id").cumcount() + 1
 
     exclude = ['student_nbme', 'email_nbme', 'username', 'student_level_nbme', 'location_nbme', 'start_date_nbme', 'grade_nbme', 'final_course_grade']
