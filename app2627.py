@@ -281,7 +281,7 @@ elif instrument == "Preceptor Matching":
         "Evaluation Period Start Date":  "eval_period_start_date",
         "Evaluation Period End Date":    "eval_period_end_date",
         "Classification":                "classification",
-        "Student Activity":              "student_activity",
+        "Student Activity":              "student_activity1",
         "Manual Evaluations":            "manual_evaluations",
     }
     df_pmx = df_pmx.rename(columns=rename_map)
