@@ -293,7 +293,7 @@ elif instrument == "Preceptor Matching":
     df_pmx = df_pmx[["record_id"] + [c for c in df_pmx.columns if c != "record_id"]]
 
     # add REDCap repeater fields
-    df_pmx["redcap_repeat_instrument"] = "oasis_eval"
+    df_pmx["redcap_repeat_instrument"] = "preceptor_matching"
     df_pmx["redcap_repeat_instance"]   = df_pmx.groupby("record_id").cumcount() + 1
 
     df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
