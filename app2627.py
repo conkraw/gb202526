@@ -9,7 +9,7 @@ import streamlit as st
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
 st.title("🔄 REDCap Instruments Formatter")
-st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.0.26/index.php?pid=18203&route=DataImportController:index)")
+st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.35/index.php?pid=19389&route=DataImportController:index)")
 
 
 # choose which instrument you want to format
