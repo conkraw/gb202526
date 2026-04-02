@@ -459,8 +459,8 @@ elif instrument == "Roster_HMC":
     #DUE DATES
     
     # ─── 1) Ensure start_date and end_date are datetime ─────────────────────────
-    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], infer_datetime_format=True)
-    df_roster["end_date"]   = pd.to_datetime(df_roster["end_date"], infer_datetime_format=True)
+    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], errors="coerce")
+    df_roster["end_date"]   = pd.to_datetime(df_roster["end_date"], errors="coerce")
     
     # ─── 2) Compute first Sunday on/after start_date ────────────────────────────
     days_to_sunday = (6 - df_roster["start_date"].dt.weekday) % 7
