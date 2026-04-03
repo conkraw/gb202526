@@ -671,7 +671,7 @@ elif instrument == "Roster_KP":
 
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
 
-elif instrument == "Roster_Update":
+elif instrument == "Roster_Updater":
     st.header("🔖 Roster Updater")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
