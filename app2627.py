@@ -706,35 +706,41 @@ elif instrument == "Roster_Updater":
             if col not in df.columns:
                 df[col] = ""
 
+        # clean record_id
         df["record_id"] = df["record_id"].astype(str).str.strip()
 
-    # identify which OLD records are NOT in NEW
+    # -------------------------------
+    # 🔑 CORE LOGIC
+    # -------------------------------
+
+    # get all record_ids in NEW
     new_ids = set(df_new["record_id"])
-    df_old["in_new"] = df_old["record_id"].isin(new_ids)
 
-    # blank rotation1 for OLD rows not in NEW
-    df_old.loc[~df_old["in_new"], "rotation1"] = ""
+    # find OLD rows NOT in NEW
+    df_old_only = df_old[~df_old["record_id"].isin(new_ids)].copy()
 
-    # combine NEW first (priority), then OLD
-    df_combined = pd.concat([df_new, df_old], ignore_index=True)
+    # blank rotation1 for those rows
+    df_old_only["rotation1"] = ""
 
-    # drop duplicates, keeping NEW first
+    # combine: NEW first (priority), then OLD-only
+    df_combined = pd.concat([df_new, df_old_only], ignore_index=True)
+
+    # remove any accidental duplicates
     df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
 
-    # drop helper column if present
-    if "in_new" in df_combined.columns:
-        df_combined.drop(columns=["in_new"], inplace=True)
+    # -------------------------------
+    # 📊 Summary
+    # -------------------------------
 
-    # summary stats
-    removed_count = (~df_old["in_new"]).sum()
-
-    st.write(f"Rows retained from NEW file: {len(df_new)}")
-    st.write(f"OLD rows not in NEW (rotation1 blanked): {removed_count}")
+    st.write(f"Rows in NEW file: {len(df_new)}")
+    st.write(f"OLD-only rows retained (rotation1 blanked): {len(df_old_only)}")
     st.write(f"Final unique records: {len(df_combined)}")
 
+    # preview
     st.write("Preview of updated roster:")
     st.dataframe(df_combined)
 
+    # download
     csv_output = df_combined.to_csv(index=False).encode("utf-8")
 
     st.download_button(
