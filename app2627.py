@@ -292,43 +292,60 @@ elif instrument == "Preceptor Matching":
     # move record_id to front
     df_pmx = df_pmx[["record_id"] + [c for c in df_pmx.columns if c != "record_id"]]
 
-    # add REDCap repeater fields
-    df_pmx["redcap_repeat_instrument"] = "preceptor_matching"
-    df_pmx["redcap_repeat_instance"]   = df_pmx.groupby("record_id").cumcount() + 1
+    # drop columns you do not want
+    df_pmx = df_pmx.drop(columns=[
+        "start_date",
+        "end_date",
+        "location",
+        "student_name",
+        "student_username",
+        "student_email"
+    ])
 
-    df_pmx = df_pmx.drop(columns=["start_date","end_date","location","student_name","student_username","student_email"])
-
-    # ─── normalize manual_evaluations to one per row ────────────────────
-    # split on "|" into lists
-    df_pmx["manual_evaluations"] = df_pmx["manual_evaluations"] \
-        .fillna("") \
+    # normalize manual_evaluations to one per row
+    df_pmx["manual_evaluations"] = (
+        df_pmx["manual_evaluations"]
+        .fillna("")
         .str.split("|")
-    
-    # explode so each list element gets its own row
-    df_pmx = df_pmx.explode("manual_evaluations")
-    
-    # remove leading "*" and any extra whitespace
-    df_pmx["manual_evaluations"] = df_pmx["manual_evaluations"] \
-        .str.lstrip("*") \
-        .str.strip()
+    )
 
-        # ─── drop unwanted categories ───────────────────────────────────────
+    df_pmx = df_pmx.explode("manual_evaluations")
+
+    df_pmx["manual_evaluations"] = (
+        df_pmx["manual_evaluations"]
+        .fillna("")
+        .str.lstrip("*")
+        .str.strip()
+    )
+
+    # remove blank rows
+    df_pmx = df_pmx[df_pmx["manual_evaluations"] != ""]
+
+    # drop unwanted categories
     to_drop = ["Clinical Teaching Eval", "Mid-Cycle Feedback"]
     df_pmx = df_pmx[~df_pmx["manual_evaluations"].isin(to_drop)]
 
     # get all unique manual_evaluations values
-    opts = df_pmx["manual_evaluations"].dropna().unique().tolist()
-    
-    # multiselect defaulting to all, so you can deselect any you don’t want
+    opts = sorted(df_pmx["manual_evaluations"].dropna().unique().tolist())
+
+    # multiselect defaulting to all
     selected = st.multiselect(
         "Filter by manual_evaluations:",
         options=opts,
         default=opts
     )
-    
-    # filter the DataFrame to only those values
+
+    # filter the DataFrame
     df_pmx = df_pmx[df_pmx["manual_evaluations"].isin(selected)]
 
+    # NOW assign REDCap repeater fields
+    df_pmx["redcap_repeat_instrument"] = "preceptor_matching"
+    df_pmx["redcap_repeat_instance"] = df_pmx.groupby("record_id").cumcount() + 1
+
+    # optional: reorder so repeat fields are near the front
+    front_cols = ["record_id", "redcap_repeat_instrument", "redcap_repeat_instance"]
+    remaining_cols = [c for c in df_pmx.columns if c not in front_cols]
+    df_pmx = df_pmx[front_cols + remaining_cols]
 
     # preview + download
     st.dataframe(df_pmx, height=400)
@@ -338,6 +355,7 @@ elif instrument == "Preceptor Matching":
         file_name="preceptor_matching_formatted.csv",
         mime="text/csv",
     )
+    
 
 
 elif instrument == "Roster_HMC":
