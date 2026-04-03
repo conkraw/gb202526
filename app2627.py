@@ -709,14 +709,10 @@ elif instrument == "Roster_Updater":
         # clean record_id
         df["record_id"] = df["record_id"].astype(str).str.strip()
 
-    # -------------------------------
-    # 🔑 CORE LOGIC
-    # -------------------------------
-
     # get all record_ids in NEW
     new_ids = set(df_new["record_id"])
 
-    # find OLD rows NOT in NEW
+    # find OLD rows NOT in NEW = dropped students
     df_old_only = df_old[~df_old["record_id"].isin(new_ids)].copy()
 
     # blank rotation1 for those rows
@@ -728,24 +724,40 @@ elif instrument == "Roster_Updater":
     # remove any accidental duplicates
     df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
 
-    # -------------------------------
-    # 📊 Summary
-    # -------------------------------
-
+    # summary
     st.write(f"Rows in NEW file: {len(df_new)}")
     st.write(f"OLD-only rows retained (rotation1 blanked): {len(df_old_only)}")
     st.write(f"Final unique records: {len(df_combined)}")
 
+    # dropped students list
+    st.subheader("Dropped Students")
+
+    if len(df_old_only) > 0:
+        st.write(f"Students in OLD roster but not in NEW roster: {len(df_old_only)}")
+        st.dataframe(df_old_only)
+    else:
+        st.write("No dropped students found.")
+
     # preview
-    st.write("Preview of updated roster:")
+    st.subheader("Preview of Updated Roster")
     st.dataframe(df_combined)
 
-    # download
+    # download updated roster
     csv_output = df_combined.to_csv(index=False).encode("utf-8")
 
     st.download_button(
         label="Download Updated Roster CSV",
         data=csv_output,
         file_name="updated_roster.csv",
+        mime="text/csv"
+    )
+
+    # optional: separate download for dropped students
+    dropped_output = df_old_only.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Dropped Students CSV",
+        data=dropped_output,
+        file_name="dropped_students.csv",
         mime="text/csv"
     )
