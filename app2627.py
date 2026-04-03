@@ -675,82 +675,91 @@ elif instrument == "Roster_Update":
     st.header("🔖 Roster Updater")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
-    # upload exactly one CSV
-    roster_file = st.file_uploader(
-        "Upload exactly one Roster CSV",
+    import pandas as pd
+
+    # upload OLD roster
+    old_file = st.file_uploader(
+        "Upload OLD Roster CSV",
         type=["csv"],
         accept_multiple_files=False,
-        key="roster"
+        key="old_roster"
     )
-    if not roster_file:
+
+    # upload NEW roster
+    new_file = st.file_uploader(
+        "Upload NEW Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="new_roster"
+    )
+
+    if not old_file or not new_file:
         st.stop()
 
-    import pandas as pd
-    import os
+    # read both files
+    df_old = pd.read_csv(old_file, dtype=str).fillna("")
+    df_new = pd.read_csv(new_file, dtype=str).fillna("")
 
-    # path to your previous file
-    old_file_path = "old.csv"
-
-    # read new upload
-    df_new = pd.read_csv(roster_file, dtype=str).fillna("")
-
-    # make sure columns exist
-    for col in ["record_id", "rotation", "rotation1"]:
-        if col not in df_new.columns:
-            df_new[col] = ""
-
-    # read old file if it exists
-    if os.path.exists(old_file_path):
-        df_old = pd.read_csv(old_file_path, dtype=str).fillna("")
-    else:
-        df_old = pd.DataFrame(columns=["record_id", "rotation", "rotation1"])
-
-    # keep only needed columns from old file
+    # make sure required columns exist in OLD file
     for col in ["record_id", "rotation", "rotation1"]:
         if col not in df_old.columns:
             df_old[col] = ""
 
-    df_old_lookup = df_old[["record_id", "rotation", "rotation1"]].copy()
+    # make sure required columns exist in NEW file
+    for col in ["record_id", "rotation", "rotation1"]:
+        if col not in df_new.columns:
+            df_new[col] = ""
 
-    # merge old rotation values onto new roster by record_id
-    df_merged = df_new.merge(
-        df_old_lookup,
-        on="record_id",
-        how="left",
-        suffixes=("", "_old")
+    # strip spaces just in case
+    df_old["record_id"] = df_old["record_id"].astype(str).str.strip()
+    df_new["record_id"] = df_new["record_id"].astype(str).str.strip()
+
+    # build lookup from old file
+    old_map = (
+        df_old[["record_id", "rotation", "rotation1"]]
+        .drop_duplicates(subset=["record_id"], keep="first")
+        .set_index("record_id")[["rotation", "rotation1"]]
+        .to_dict("index")
     )
 
-    # if record_id is blank, blank out rotation fields
-    blank_record_mask = df_merged["record_id"].str.strip() == ""
+    # update each row in new file
+    def update_row(row):
+        rid = str(row["record_id"]).strip()
 
-    # if record_id exists in old file, keep old rotation values
-    found_old_mask = df_merged["rotation_old"].notna() | df_merged["rotation1_old"].notna()
+        if rid == "":
+            row["rotation"] = ""
+            row["rotation1"] = ""
+        elif rid in old_map:
+            row["rotation"] = old_map[rid].get("rotation", "")
+            row["rotation1"] = old_map[rid].get("rotation1", "")
+        else:
+            row["rotation"] = ""
+            row["rotation1"] = ""
 
-    # update rotation
-    df_merged["rotation"] = df_merged["rotation_old"].where(
-        ~blank_record_mask,
-        ""
-    )
-    df_merged["rotation1"] = df_merged["rotation1_old"].where(
-        ~blank_record_mask,
-        ""
-    )
+        return row
 
-    # for record_ids not found in old.csv, also blank them
-    df_merged["rotation"] = df_merged["rotation"].fillna("")
-    df_merged["rotation1"] = df_merged["rotation1"].fillna("")
+    df_updated = df_new.apply(update_row, axis=1)
 
-    # drop helper columns
-    df_merged.drop(columns=["rotation_old", "rotation1_old"], inplace=True)
+    # optional preview info
+    matched_count = df_updated["record_id"].isin(df_old["record_id"]).sum()
+    blank_count = (df_updated["record_id"].str.strip() == "").sum()
+    new_count = (
+        (df_updated["record_id"].str.strip() != "") &
+        (~df_updated["record_id"].isin(df_old["record_id"]))
+    ).sum()
+
+    st.write(f"Rows matched to OLD file: {matched_count}")
+    st.write(f"Rows with blank record_id: {blank_count}")
+    st.write(f"Rows with new/unmatched record_id: {new_count}")
 
     st.write("Preview of updated roster:")
-    st.dataframe(df_merged)
+    st.dataframe(df_updated)
 
-    csv_output = df_merged.to_csv(index=False).encode("utf-8")
+    csv_output = df_updated.to_csv(index=False).encode("utf-8")
+
     st.download_button(
         label="Download Updated Roster CSV",
         data=csv_output,
         file_name="updated_roster.csv",
         mime="text/csv"
     )
-
