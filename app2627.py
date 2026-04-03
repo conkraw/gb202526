@@ -13,7 +13,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.
 
 
 # choose which instrument you want to format
-instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", ])
+instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater"])
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
@@ -670,4 +670,87 @@ elif instrument == "Roster_KP":
     st.dataframe(df_roster, height=400)
 
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
+
+elif instrument == "Roster_Update":
+    st.header("🔖 Roster Updater")
+    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
+
+    # upload exactly one CSV
+    roster_file = st.file_uploader(
+        "Upload exactly one Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="roster"
+    )
+    if not roster_file:
+        st.stop()
+
+    import pandas as pd
+    import os
+
+    # path to your previous file
+    old_file_path = "old.csv"
+
+    # read new upload
+    df_new = pd.read_csv(roster_file, dtype=str).fillna("")
+
+    # make sure columns exist
+    for col in ["record_id", "rotation", "rotation1"]:
+        if col not in df_new.columns:
+            df_new[col] = ""
+
+    # read old file if it exists
+    if os.path.exists(old_file_path):
+        df_old = pd.read_csv(old_file_path, dtype=str).fillna("")
+    else:
+        df_old = pd.DataFrame(columns=["record_id", "rotation", "rotation1"])
+
+    # keep only needed columns from old file
+    for col in ["record_id", "rotation", "rotation1"]:
+        if col not in df_old.columns:
+            df_old[col] = ""
+
+    df_old_lookup = df_old[["record_id", "rotation", "rotation1"]].copy()
+
+    # merge old rotation values onto new roster by record_id
+    df_merged = df_new.merge(
+        df_old_lookup,
+        on="record_id",
+        how="left",
+        suffixes=("", "_old")
+    )
+
+    # if record_id is blank, blank out rotation fields
+    blank_record_mask = df_merged["record_id"].str.strip() == ""
+
+    # if record_id exists in old file, keep old rotation values
+    found_old_mask = df_merged["rotation_old"].notna() | df_merged["rotation1_old"].notna()
+
+    # update rotation
+    df_merged["rotation"] = df_merged["rotation_old"].where(
+        ~blank_record_mask,
+        ""
+    )
+    df_merged["rotation1"] = df_merged["rotation1_old"].where(
+        ~blank_record_mask,
+        ""
+    )
+
+    # for record_ids not found in old.csv, also blank them
+    df_merged["rotation"] = df_merged["rotation"].fillna("")
+    df_merged["rotation1"] = df_merged["rotation1"].fillna("")
+
+    # drop helper columns
+    df_merged.drop(columns=["rotation_old", "rotation1_old"], inplace=True)
+
+    st.write("Preview of updated roster:")
+    st.dataframe(df_merged)
+
+    csv_output = df_merged.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Updated Roster CSV",
+        data=csv_output,
+        file_name="updated_roster.csv",
+        mime="text/csv"
+    )
 
