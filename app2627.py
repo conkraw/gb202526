@@ -696,66 +696,46 @@ elif instrument == "Roster_Updater":
     if not old_file or not new_file:
         st.stop()
 
-    # read both files
+    # read files
     df_old = pd.read_csv(old_file, dtype=str).fillna("")
     df_new = pd.read_csv(new_file, dtype=str).fillna("")
 
-    # make sure required columns exist in OLD file
-    for col in ["record_id", "rotation", "rotation1"]:
-        if col not in df_old.columns:
-            df_old[col] = ""
+    # ensure required columns exist
+    for df in [df_old, df_new]:
+        for col in ["record_id", "rotation", "rotation1"]:
+            if col not in df.columns:
+                df[col] = ""
 
-    # make sure required columns exist in NEW file
-    for col in ["record_id", "rotation", "rotation1"]:
-        if col not in df_new.columns:
-            df_new[col] = ""
+        df["record_id"] = df["record_id"].astype(str).str.strip()
 
-    # strip spaces just in case
-    df_old["record_id"] = df_old["record_id"].astype(str).str.strip()
-    df_new["record_id"] = df_new["record_id"].astype(str).str.strip()
+    # identify which OLD records are NOT in NEW
+    new_ids = set(df_new["record_id"])
+    df_old["in_new"] = df_old["record_id"].isin(new_ids)
 
-    # build lookup from old file
-    old_map = (
-        df_old[["record_id", "rotation", "rotation1"]]
-        .drop_duplicates(subset=["record_id"], keep="first")
-        .set_index("record_id")[["rotation", "rotation1"]]
-        .to_dict("index")
-    )
+    # blank rotation1 for OLD rows not in NEW
+    df_old.loc[~df_old["in_new"], "rotation1"] = ""
 
-    # update each row in new file
-    def update_row(row):
-        rid = str(row["record_id"]).strip()
+    # combine NEW first (priority), then OLD
+    df_combined = pd.concat([df_new, df_old], ignore_index=True)
 
-        if rid == "":
-            row["rotation"] = ""
-            row["rotation1"] = ""
-        elif rid in old_map:
-            row["rotation"] = old_map[rid].get("rotation", "")
-            row["rotation1"] = old_map[rid].get("rotation1", "")
-        else:
-            row["rotation"] = ""
-            row["rotation1"] = ""
+    # drop duplicates, keeping NEW first
+    df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
 
-        return row
+    # drop helper column if present
+    if "in_new" in df_combined.columns:
+        df_combined.drop(columns=["in_new"], inplace=True)
 
-    df_updated = df_new.apply(update_row, axis=1)
+    # summary stats
+    removed_count = (~df_old["in_new"]).sum()
 
-    # optional preview info
-    matched_count = df_updated["record_id"].isin(df_old["record_id"]).sum()
-    blank_count = (df_updated["record_id"].str.strip() == "").sum()
-    new_count = (
-        (df_updated["record_id"].str.strip() != "") &
-        (~df_updated["record_id"].isin(df_old["record_id"]))
-    ).sum()
-
-    st.write(f"Rows matched to OLD file: {matched_count}")
-    st.write(f"Rows with blank record_id: {blank_count}")
-    st.write(f"Rows with new/unmatched record_id: {new_count}")
+    st.write(f"Rows retained from NEW file: {len(df_new)}")
+    st.write(f"OLD rows not in NEW (rotation1 blanked): {removed_count}")
+    st.write(f"Final unique records: {len(df_combined)}")
 
     st.write("Preview of updated roster:")
-    st.dataframe(df_updated)
+    st.dataframe(df_combined)
 
-    csv_output = df_updated.to_csv(index=False).encode("utf-8")
+    csv_output = df_combined.to_csv(index=False).encode("utf-8")
 
     st.download_button(
         label="Download Updated Roster CSV",
