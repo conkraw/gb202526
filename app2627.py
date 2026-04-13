@@ -496,7 +496,8 @@ elif instrument == "Roster_HMC":
     
     # ─── 5) Grade due date: 6 weeks after end_date ──────────────────────────────
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
-
+    df_roster["grade_due_date2"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
+    
     # ─── 6) Normalize all due dates to 23:59 with no seconds ─────────────────
     #due_cols = ["quiz_due_1","quiz_due_2","quiz_due_3","quiz_due_4","ass_middue_date","ass_due_date","docass_due_date_1","docass_due_date_2","grade_due_date"]
     
@@ -507,7 +508,7 @@ elif instrument == "Roster_HMC":
 
     df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
     df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y")
-
+    df_roster["grade_due_date2"] = df_roster["grade_due_date2"].dt.strftime("%m-%d-%Y")
     
     df_roster["student_demographics_complete"] = 2 
     
