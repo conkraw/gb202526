@@ -510,8 +510,6 @@ elif instrument == "Roster_HMC":
     # make sure these are datetime first
     df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], errors="coerce")
     df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], errors="coerce")
-
-    df_roster["grade_due_date2"] = df_roster["grade_due_date"].dt.strftime("%m-%d-%Y")
     
     df_roster["student_demographics_complete"] = 2 
     
