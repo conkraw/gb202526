@@ -508,6 +508,7 @@ elif instrument == "Roster_HMC":
     df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
     df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y")
 
+    df_roster["grade_due_date2"] = df_roster["grade_due_date"].dt.strftime("%m-%d-%Y")
     
     df_roster["student_demographics_complete"] = 2 
     
