@@ -507,8 +507,9 @@ elif instrument == "Roster_HMC":
     for col in due_cols:
         df_roster[col] = (df_roster[col].dt.normalize() + pd.Timedelta(hours=23, minutes=59)).dt.strftime("%m-%d-%Y 23:59")
 
-    df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y")
-    df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y")
+    # make sure these are datetime first
+    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], errors="coerce")
+    df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], errors="coerce")
 
     df_roster["grade_due_date2"] = df_roster["grade_due_date"].dt.strftime("%m-%d-%Y")
     
