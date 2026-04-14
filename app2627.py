@@ -885,6 +885,7 @@ elif instrument == "Roster_Updater":
 
     # blank rotation1 for those rows
     df_old_only["rotation1"] = ""
+    df_old_only["start_date"] = ""
 
     # combine: NEW first (priority), then OLD-only
     df_combined = pd.concat([df_new, df_old_only], ignore_index=True)
