@@ -845,7 +845,6 @@ elif instrument == "Roster_Updater":
 
     import pandas as pd
 
-    # upload OLD roster
     old_file = st.file_uploader(
         "Upload OLD Roster CSV",
         type=["csv"],
@@ -853,7 +852,6 @@ elif instrument == "Roster_Updater":
         key="old_roster"
     )
 
-    # upload NEW roster
     new_file = st.file_uploader(
         "Upload NEW Roster CSV",
         type=["csv"],
@@ -864,69 +862,98 @@ elif instrument == "Roster_Updater":
     if not old_file or not new_file:
         st.stop()
 
-    # read files
     df_old = pd.read_csv(old_file, dtype=str).fillna("")
-    df_new = pd.read_csv(new_file, dtype=str).fillna("")
+    df_new_raw = pd.read_csv(new_file, dtype=str).fillna("")
 
-    # ensure required columns exist
-    for df in [df_old, df_new]:
-        for col in ["record_id", "rotation", "rotation1"]:
-            if col not in df.columns:
-                df[col] = ""
+    # Convert OASIS new roster into REDCap-style roster
+    df_new = pd.DataFrame()
 
-        # clean record_id
-        df["record_id"] = df["record_id"].astype(str).str.strip()
+    df_new["record_id"] = df_new_raw["External ID"].str.strip()
+    df_new["legal_name"] = df_new_raw["Student"].str.replace(";", " (", regex=False).str.replace("MD2028", "MD)", regex=False).str.replace("MD2027", "MD)", regex=False)
+    df_new["email"] = df_new_raw["Email Address"]
+    df_new["psu_id"] = df_new_raw["PSU ID"]
+    df_new["track"] = df_new_raw["Track"]
+    df_new["location"] = df_new_raw["Location"]
 
-    # get all record_ids in NEW
+    df_new["start_date"] = pd.to_datetime(df_new_raw["Start Date"]).dt.strftime("%m-%d-%Y")
+    df_new["end_date"] = pd.to_datetime(df_new_raw["End Date"]).dt.strftime("%m-%d-%Y")
+
+    df_new["lastname"] = df_new_raw["Student"].str.split(",", expand=True)[0].str.strip()
+    df_new["firstname"] = df_new_raw["Student"].str.split(",", expand=True)[1].str.split(";", expand=True)[0].str.strip()
+    df_new["name"] = df_new["firstname"] + " " + df_new["lastname"]
+    df_new["email_2"] = df_new["record_id"] + "@psu.edu"
+
+    # Assign rotation based on start date order
+    rotation_map = {
+        "03-16-2026": "r01",
+        "04-13-2026": "r02",
+        "05-11-2026": "r03",
+        "06-08-2026": "r04",
+        "07-06-2026": "r05",
+        "08-03-2026": "r06",
+        "09-01-2026": "r07",
+        "09-28-2026": "r08",
+        "10-26-2026": "r09",
+        "11-23-2026": "r10",
+        "01-04-2027": "r11",
+        "02-01-2027": "r12",
+    }
+
+    df_new["rotation"] = df_new["start_date"].map(rotation_map).fillna("")
+    df_new["rotation1"] = df_new["rotation"]
+
+    df_new["ass_due_date"] = (
+        pd.to_datetime(df_new["end_date"]) + pd.Timedelta(days=2)
+    ).dt.strftime("%m-%d-%Y 23:59")
+
+    df_new["grade_due_date"] = (
+        pd.to_datetime(df_new["end_date"]) + pd.Timedelta(days=42)
+    ).dt.strftime("%m-%d-%Y 23:59")
+
+    df_new["student_demographics_complete"] = "2"
+
+    # Match OLD file column order exactly
+    for col in df_old.columns:
+        if col not in df_new.columns:
+            df_new[col] = ""
+
+    df_new = df_new[df_old.columns]
+
+    # Clean IDs
+    df_old["record_id"] = df_old["record_id"].astype(str).str.strip()
+    df_new["record_id"] = df_new["record_id"].astype(str).str.strip()
+
+    # Students removed from new roster
     new_ids = set(df_new["record_id"])
-
-    # find OLD rows NOT in NEW = dropped students
     df_old_only = df_old[~df_old["record_id"].isin(new_ids)].copy()
 
-    # blank rotation1 for those rows
+    # Blank dropped students' active rotation fields
     df_old_only["rotation1"] = ""
     df_old_only["start_date"] = ""
 
-    # combine: NEW first (priority), then OLD-only
+    # Combine clean new roster + retained dropped students
     df_combined = pd.concat([df_new, df_old_only], ignore_index=True)
 
-    # remove any accidental duplicates
-    df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
+    df_combined = df_combined.drop_duplicates(
+        subset=["record_id"],
+        keep="first"
+    )
 
-    # summary
     st.write(f"Rows in NEW file: {len(df_new)}")
-    st.write(f"OLD-only rows retained (rotation1 blanked): {len(df_old_only)}")
+    st.write(f"OLD-only rows retained: {len(df_old_only)}")
     st.write(f"Final unique records: {len(df_combined)}")
 
-    # dropped students list
     st.subheader("Dropped Students")
+    st.dataframe(df_old_only)
 
-    if len(df_old_only) > 0:
-        st.write(f"Students in OLD roster but not in NEW roster: {len(df_old_only)}")
-        st.dataframe(df_old_only)
-    else:
-        st.write("No dropped students found.")
-
-    # preview
     st.subheader("Preview of Updated Roster")
     st.dataframe(df_combined)
 
-    # download updated roster
     csv_output = df_combined.to_csv(index=False).encode("utf-8")
 
     st.download_button(
         label="Download Updated Roster CSV",
         data=csv_output,
         file_name="updated_roster.csv",
-        mime="text/csv"
-    )
-
-    # optional: separate download for dropped students
-    dropped_output = df_old_only.to_csv(index=False).encode("utf-8")
-
-    st.download_button(
-        label="Download Dropped Students CSV",
-        data=dropped_output,
-        file_name="dropped_students.csv",
         mime="text/csv"
     )
