@@ -839,7 +839,6 @@ elif instrument == "Roster_KP":
 
     st.download_button("📥 Download formatted Roster CSV",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_formatted.csv",mime="text/csv")
 
-
 elif instrument == "Roster_Updater":
     st.header("🔖 Roster Updater")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
@@ -872,13 +871,10 @@ elif instrument == "Roster_Updater":
         x = clean_text(x)
         if x == "":
             return ""
-        try:
-            parsed = pd.to_datetime(x, errors="coerce")
-            if pd.isna(parsed):
-                return ""
-            return parsed.strftime("%m-%d-%Y")
-        except Exception:
+        parsed = pd.to_datetime(x, errors="coerce")
+        if pd.isna(parsed):
             return ""
+        return parsed.strftime("%m-%d-%Y")
 
     def read_csv_safely(file, label):
         try:
@@ -900,6 +896,8 @@ elif instrument == "Roster_Updater":
     for col in redcap_cols:
         if col not in df_old.columns:
             df_old[col] = ""
+
+    df_old = df_old[redcap_cols].copy()
 
     required_oasis_cols = {
         "External ID": "record_id",
@@ -955,13 +953,28 @@ elif instrument == "Roster_Updater":
     df_new["grade_due_date"] = ""
     df_new["student_demographics_complete"] = "2"
 
-    df_new = df_new[redcap_cols]
+    df_new = df_new[redcap_cols].copy()
 
-    df_old = df_old[redcap_cols]
-
+    # Clean IDs
     df_old["record_id"] = df_old["record_id"].apply(clean_text).str.lower()
     df_new["record_id"] = df_new["record_id"].apply(clean_text).str.lower()
 
+    # Ignore KPLIC from OLD REDCap only
+    df_old["rotation"] = df_old["rotation"].astype(str).str.strip()
+
+    old_kplic = df_old[
+        df_old["rotation"].str.upper() == "KPLIC"
+    ].copy()
+
+    df_old = df_old[
+        df_old["rotation"].str.upper() != "KPLIC"
+    ].copy()
+
+    if len(old_kplic) > 0:
+        st.info(f"Ignored {len(old_kplic)} OLD REDCap rows where rotation = KPLIC.")
+        st.dataframe(old_kplic[["record_id", "legal_name", "rotation"]])
+
+    # Remove blank IDs
     blank_old_ids = df_old[df_old["record_id"] == ""].copy()
     blank_new_ids = df_new[df_new["record_id"] == ""].copy()
 
@@ -976,6 +989,7 @@ elif instrument == "Roster_Updater":
     df_old = df_old[df_old["record_id"] != ""].copy()
     df_new = df_new[df_new["record_id"] != ""].copy()
 
+    # Duplicate protection
     old_dupes = df_old[df_old["record_id"].duplicated(keep=False)].copy()
     new_dupes = df_new[df_new["record_id"].duplicated(keep=False)].copy()
 
@@ -990,14 +1004,16 @@ elif instrument == "Roster_Updater":
     df_old = df_old.drop_duplicates(subset=["record_id"], keep="first")
     df_new = df_new.drop_duplicates(subset=["record_id"], keep="first")
 
+    # Format all date columns safely
     for col in ["start_date", "end_date", "ass_due_date", "grade_due_date"]:
         df_old[col] = df_old[col].apply(format_date)
         df_new[col] = df_new[col].apply(format_date)
 
+    # Dropped students = OLD REDCap students not present in NEW OASIS
     new_ids = set(df_new["record_id"])
-
     df_dropped = df_old[~df_old["record_id"].isin(new_ids)].copy()
 
+    # Clear rotation fields for dropped students
     df_dropped["rotation"] = ""
     df_dropped["rotation1"] = ""
     df_dropped["start_date"] = ""
@@ -1005,9 +1021,11 @@ elif instrument == "Roster_Updater":
     df_dropped["ass_due_date"] = ""
     df_dropped["grade_due_date"] = ""
 
+    # Combine active/moved students from OASIS + dropped students from REDCap
     df_combined = pd.concat([df_new, df_dropped], ignore_index=True)
     df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
 
+    # Final date check
     invalid_dates = []
 
     for col in ["start_date", "end_date", "ass_due_date", "grade_due_date"]:
@@ -1021,8 +1039,8 @@ elif instrument == "Roster_Updater":
             invalid_dates.append(bad_rows)
 
     st.subheader("Summary")
-    st.write(f"Rows in OLD REDCap file: {len(df_old)}")
-    st.write(f"Rows in NEW OASIS file: {len(df_new)}")
+    st.write(f"Rows in OLD REDCap file after removing KPLIC and blank IDs: {len(df_old)}")
+    st.write(f"Rows in NEW OASIS file after removing blank IDs: {len(df_new)}")
     st.write(f"Dropped students retained with rotation cleared: {len(df_dropped)}")
     st.write(f"Final unique records: {len(df_combined)}")
 
