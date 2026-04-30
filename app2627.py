@@ -545,8 +545,6 @@ elif instrument == "Roster_KPLIC":
     st.header("🔖 Roster KPLIC")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
-    import pandas as pd
-
     roster_file = st.file_uploader(
         "Upload exactly one KPLIC Roster CSV",
         type=["csv"],
