@@ -541,7 +541,7 @@ elif instrument == "Roster_HMC":
     
     st.download_button("📥 Download roster_intake_form csv",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_intake_form.csv",mime="text/csv")
 
-elif instrument == "Roster_KPLIC":
+elif instrument == "Roster_KP":
     st.header("🔖 Roster KPLIC")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
