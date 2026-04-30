@@ -13,7 +13,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.
 
 
 # choose which instrument you want to format
-instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater"])
+instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater", "Roster_Updaterx"])
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
@@ -923,6 +923,191 @@ elif instrument == "Roster_Updater":
 
     # optional: separate download for dropped students
     dropped_output = df_old_only.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Dropped Students CSV",
+        data=dropped_output,
+        file_name="dropped_students.csv",
+        mime="text/csv"
+    )
+
+elif instrument == "Roster_Updaterx":
+    st.header("🔖 Roster Updater")
+    st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
+
+    import pandas as pd
+
+    old_file = st.file_uploader(
+        "Upload OLD REDCap Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="old_roster"
+    )
+
+    new_file = st.file_uploader(
+        "Upload NEW OASIS Roster CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        key="new_roster"
+    )
+
+    if not old_file or not new_file:
+        st.stop()
+
+    def clean_text(x):
+        if pd.isna(x):
+            return ""
+        return str(x).strip()
+
+    def read_csv_safely(file):
+        try:
+            return pd.read_csv(file, dtype=str).fillna("")
+        except Exception as e:
+            st.error(f"Could not read file: {e}")
+            st.stop()
+
+    df_old = read_csv_safely(old_file)
+    df_oasis = read_csv_safely(new_file)
+
+    # Required REDCap columns
+    redcap_cols = [
+        "record_id", "legal_name", "email", "psu_id", "track", "location",
+        "start_date", "end_date", "lastname", "firstname", "name", "email_2",
+        "rotation1", "rotation", "ass_due_date", "grade_due_date",
+        "student_demographics_complete"
+    ]
+
+    for col in redcap_cols:
+        if col not in df_old.columns:
+            df_old[col] = ""
+
+    # Convert OASIS to REDCap format
+    required_oasis_cols = {
+        "External ID": "record_id",
+        "Student": "legal_name",
+        "Email Address": "email",
+        "PSU ID": "psu_id",
+        "Track": "track",
+        "Location": "location",
+        "Start Date": "start_date",
+        "End Date": "end_date"
+    }
+
+    missing = [col for col in required_oasis_cols if col not in df_oasis.columns]
+    if missing:
+        st.error(f"The OASIS file is missing these required columns: {missing}")
+        st.stop()
+
+    df_new = pd.DataFrame()
+
+    for oasis_col, redcap_col in required_oasis_cols.items():
+        df_new[redcap_col] = df_oasis[oasis_col].apply(clean_text)
+
+    # Clean legal name from OASIS: "Last, First; MD2028" -> "Last, First (MD)"
+    df_new["legal_name"] = (
+        df_new["legal_name"]
+        .str.replace("; MD2028", " (MD)", regex=False)
+        .str.replace("; MD2027", " (MD)", regex=False)
+        .str.replace("; MD2026", " (MD)", regex=False)
+        .str.strip()
+    )
+
+    # Create name fields
+    df_new["lastname"] = df_new["legal_name"].str.split(",", n=1).str[0].str.strip()
+
+    df_new["firstname"] = (
+        df_new["legal_name"]
+        .str.split(",", n=1)
+        .str[1]
+        .fillna("")
+        .str.replace("(MD)", "", regex=False)
+        .str.strip()
+    )
+
+    df_new["name"] = (df_new["firstname"] + " " + df_new["lastname"]).str.strip()
+
+    # PSU email from record_id
+    df_new["email_2"] = df_new["record_id"] + "@psu.edu"
+
+    # Leave these blank unless you calculate them elsewhere
+    df_new["rotation1"] = ""
+    df_new["rotation"] = ""
+    df_new["ass_due_date"] = ""
+    df_new["grade_due_date"] = ""
+    df_new["student_demographics_complete"] = "2"
+
+    # Keep only REDCap columns
+    df_new = df_new[redcap_cols]
+
+    # Clean IDs
+    df_old["record_id"] = df_old["record_id"].apply(clean_text).str.lower()
+    df_new["record_id"] = df_new["record_id"].apply(clean_text).str.lower()
+
+    # Remove blank IDs
+    df_old = df_old[df_old["record_id"] != ""].copy()
+    df_new = df_new[df_new["record_id"] != ""].copy()
+
+    # Remove duplicate IDs safely
+    old_dupes = df_old[df_old["record_id"].duplicated(keep=False)]
+    new_dupes = df_new[df_new["record_id"].duplicated(keep=False)]
+
+    if len(new_dupes) > 0:
+        st.warning("Duplicate record_ids found in NEW OASIS file. Keeping the first occurrence.")
+        st.dataframe(new_dupes)
+
+    df_old = df_old.drop_duplicates(subset=["record_id"], keep="first")
+    df_new = df_new.drop_duplicates(subset=["record_id"], keep="first")
+
+    # Find dropped students: in OLD but not in NEW
+    new_ids = set(df_new["record_id"])
+    df_dropped = df_old[~df_old["record_id"].isin(new_ids)].copy()
+
+    # Dropped students stay in REDCap but lose rotation assignment
+    df_dropped["rotation"] = ""
+    df_dropped["rotation1"] = ""
+
+    # Optional: clear dates too
+    df_dropped["start_date"] = ""
+    df_dropped["end_date"] = ""
+    df_dropped["ass_due_date"] = ""
+    df_dropped["grade_due_date"] = ""
+
+    # Combine:
+    # NEW file wins for active/moved students
+    # OLD-only students are retained as dropped with rotation cleared
+    df_combined = pd.concat([df_new, df_dropped], ignore_index=True)
+    df_combined = df_combined.drop_duplicates(subset=["record_id"], keep="first")
+
+    # Summary
+    st.subheader("Summary")
+    st.write(f"Rows in OLD REDCap file: {len(df_old)}")
+    st.write(f"Rows in NEW OASIS file: {len(df_new)}")
+    st.write(f"Dropped students retained with rotation cleared: {len(df_dropped)}")
+    st.write(f"Final unique records: {len(df_combined)}")
+
+    # Dropped students
+    st.subheader("Dropped Students")
+    if len(df_dropped) > 0:
+        st.dataframe(df_dropped[["record_id", "legal_name", "rotation", "rotation1", "start_date", "end_date"]])
+    else:
+        st.success("No dropped students found.")
+
+    # Preview
+    st.subheader("Preview of Updated Roster")
+    st.dataframe(df_combined)
+
+    # Download updated roster
+    csv_output = df_combined.to_csv(index=False).encode("utf-8-sig")
+
+    st.download_button(
+        label="Download Updated REDCap Roster CSV",
+        data=csv_output,
+        file_name="updated_roster.csv",
+        mime="text/csv"
+    )
+
+    # Download dropped students
+    dropped_output = df_dropped.to_csv(index=False).encode("utf-8-sig")
 
     st.download_button(
         label="Download Dropped Students CSV",
