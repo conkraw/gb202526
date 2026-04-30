@@ -541,137 +541,137 @@ elif instrument == "Roster_HMC":
     
     st.download_button("📥 Download roster_intake_form csv",df_roster.to_csv(index=False).encode("utf-8"),file_name="roster_intake_form.csv",mime="text/csv")
 
-elif instrument == "Roster_KP":
-    st.header("🔖 Roster KP")
+elif instrument == "Roster_KPLIC":
+    st.header("🔖 Roster KPLIC")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
 
     import pandas as pd
 
     roster_file = st.file_uploader(
-        "Upload exactly one Roster CSV",
+        "Upload exactly one KPLIC Roster CSV",
         type=["csv"],
         accept_multiple_files=False,
-        key="roster"
+        key="roster_kplic"
     )
 
     if not roster_file:
         st.stop()
 
-    # ---------------- SAFE READ ----------------
+    def clean_text(x):
+        if pd.isna(x):
+            return ""
+        return str(x).strip()
+
+    def safe_date(x):
+        x = clean_text(x)
+        if x == "":
+            return pd.NaT
+        return pd.to_datetime(x, errors="coerce")
+
     try:
         df_roster = pd.read_csv(roster_file, dtype=str).fillna("")
     except Exception as e:
-        st.error(f"Error reading CSV: {e}")
+        st.error(f"Could not read roster file: {e}")
         st.stop()
 
     df_roster.columns = df_roster.columns.str.strip()
 
-    # ---------------- RENAME ----------------
     rename_map = {
-        "#": "row_number",
         "Student": "student",
         "Legal Name": "legal_name",
-        "Previous Name": "previous_name",
-        "Username": "username",
-        "Confidential": "confidential",
         "External ID": "record_id",
         "Email Address": "email",
-        "Phone": "phone",
-        "Pager": "pager",
-        "Mobile": "mobile",
-        "Gender": "gender",
-        "Pronouns": "pronouns",
-        "Ethnicity": "ethnicity",
-        "Designation": "designation",
-        "AAMC ID": "aamc_id",
-        "USMLE ID": "usmle_id",
-        "Home School": "home_school",
-        "Campus": "campus",
-        "Date of Birth": "date_of_birth",
-        "Emergency Contact": "emergency_contact",
-        "Emergency Phone": "emergency_phone",
-        "Primary Academic Department": "primary_academic_department",
-        "Secondary Academic Department": "secondary_academic_department",
-        "Academic Type": "academic_type",
-        "Primary Site": "primary_site",
-        "NBME": "nbme_score",
         "PSU ID": "psu_id",
-        "Productivity Specialty": "productivity_specialty",
-        "Grade": "grade",
-        "Status": "status",
-        "Student Level": "student_level",
         "Track": "track",
         "Location": "location",
         "Start Date": "start_date",
-        "End Date": "end_date",
-        "Weeks": "weeks",
-        "Credits": "credits",
-        "Enrolled": "enrolled",
-        "Actions": "actions",
-        "Aprv By": "approved_by"
+        "End Date": "end_date"
     }
+
+    missing_cols = [col for col in rename_map if col not in df_roster.columns]
+
+    if missing_cols:
+        st.error(f"The uploaded OASIS file is missing these required columns: {missing_cols}")
+        st.stop()
 
     df_roster = df_roster.rename(columns=rename_map)
 
-    # keep only known columns safely
-    df_roster = df_roster[[c for c in rename_map.values() if c in df_roster.columns]]
+    redcap_cols = [
+        "record_id",
+        "legal_name",
+        "email",
+        "psu_id",
+        "track",
+        "location",
+        "start_date",
+        "end_date",
+        "lastname",
+        "firstname",
+        "name",
+        "email_2",
+        "rotation1",
+        "rotation",
+        "ass_due_date",
+        "grade_due_date",
+        "student_demographics_complete"
+    ]
 
-    # ensure required columns exist
-    for col in ["record_id", "start_date", "end_date", "student"]:
+    for col in redcap_cols:
         if col not in df_roster.columns:
             df_roster[col] = ""
 
-    # move record_id first
-    cols = ["record_id"] + [c for c in df_roster.columns if c != "record_id"]
-    df_roster = df_roster[cols]
+    df_roster["record_id"] = df_roster["record_id"].apply(clean_text).str.lower()
+    df_roster["email"] = df_roster["email"].apply(clean_text)
+    df_roster["psu_id"] = df_roster["psu_id"].apply(clean_text)
+    df_roster["track"] = df_roster["track"].apply(clean_text)
+    df_roster["location"] = df_roster["location"].apply(clean_text)
 
-    # ---------------- NAME PARSING ----------------
-    name_only = df_roster["student"].str.split(";", n=1).str[0]
+    blank_ids = df_roster[df_roster["record_id"] == ""].copy()
+
+    if len(blank_ids) > 0:
+        st.warning(f"{len(blank_ids)} rows had blank External ID and were removed.")
+        st.dataframe(blank_ids)
+
+    df_roster = df_roster[df_roster["record_id"] != ""].copy()
+
+    dupes = df_roster[df_roster["record_id"].duplicated(keep=False)].copy()
+
+    if len(dupes) > 0:
+        st.warning("Duplicate record_ids found. Keeping the first occurrence.")
+        st.dataframe(dupes)
+
+    df_roster = df_roster.drop_duplicates(subset=["record_id"], keep="first")
+
+    name_only = df_roster["student"].astype(str).str.split(";", n=1).str[0]
     parts = name_only.str.split(",", n=1, expand=True)
 
-    df_roster["lastname"] = parts[0].str.strip()
+    df_roster["lastname"] = parts[0].fillna("").str.strip()
     df_roster["firstname"] = parts[1].fillna("").str.strip()
 
-    df_roster["name"] = df_roster["firstname"] + " " + df_roster["lastname"]
-    df_roster["legal_name"] = df_roster["lastname"] + ", " + df_roster["firstname"] + " (MD)"
-    df_roster["email_2"] = df_roster["record_id"].str.strip().str.lower() + "@psu.edu"
+    df_roster["name"] = (df_roster["firstname"] + " " + df_roster["lastname"]).str.strip()
+    df_roster["legal_name"] = (df_roster["lastname"] + ", " + df_roster["firstname"] + " (MD)").str.strip()
+    df_roster["email_2"] = df_roster["record_id"] + "@psu.edu"
 
-    # ---------------- SAFE DATE PARSING ----------------
-    df_roster["start_date"] = pd.to_datetime(df_roster["start_date"], errors="coerce")
-    df_roster["end_date"] = pd.to_datetime(df_roster["end_date"], errors="coerce")
+    df_roster["start_date"] = df_roster["start_date"].apply(safe_date)
+    df_roster["end_date"] = df_roster["end_date"].apply(safe_date)
 
-    # warn if bad dates
     bad_dates = df_roster[
         df_roster["start_date"].isna() | df_roster["end_date"].isna()
-    ]
+    ].copy()
 
     if len(bad_dates) > 0:
-        st.warning(f"{len(bad_dates)} rows have invalid or missing dates")
-        st.dataframe(bad_dates[["record_id", "student", "start_date", "end_date"]])
+        st.warning(f"{len(bad_dates)} rows have invalid or missing start/end dates.")
+        st.dataframe(bad_dates[["record_id", "legal_name", "start_date", "end_date"]])
 
-    # ---------------- ROTATION DATES ----------------
-    unique_dates = sorted(df_roster["start_date"].dropna().unique())
-
-    for idx, dt in enumerate(unique_dates, 1):
-        df_roster[f"rot_date_{idx}"] = df_roster["start_date"].apply(
-            lambda x: dt.strftime("%m-%d-%Y") if pd.notna(x) and x == dt else ""
-        )
-
-    # assign KPLIC rotation
     df_roster["rotation1"] = "KPLIC"
     df_roster["rotation"] = "KPLIC"
 
-    # ---------------- DUE DATES ----------------
     days_to_sunday = (6 - df_roster["start_date"].dt.weekday) % 7
     first_sunday = df_roster["start_date"] + pd.to_timedelta(days_to_sunday, unit="D")
 
-    for n in range(1, 5):
-        df_roster[f"quiz_due_{n}"] = first_sunday + pd.Timedelta(weeks=(n - 1))
-
-    df_roster["ass_due_date"] = df_roster["quiz_due_4"]
+    df_roster["ass_due_date"] = first_sunday + pd.Timedelta(weeks=3)
     df_roster["grade_due_date"] = df_roster["end_date"] + pd.Timedelta(weeks=6)
 
-    # format due dates
     for col in ["ass_due_date", "grade_due_date"]:
         df_roster[col] = (
             df_roster[col]
@@ -681,27 +681,40 @@ elif instrument == "Roster_KP":
             .fillna("")
         )
 
-    # final format for start/end
     df_roster["start_date"] = df_roster["start_date"].dt.strftime("%m-%d-%Y").fillna("")
     df_roster["end_date"] = df_roster["end_date"].dt.strftime("%m-%d-%Y").fillna("")
 
-    # ---------------- CLEANUP ----------------
-    df_roster = df_roster.drop(
-        columns=[c for c in df_roster.columns if c.startswith("quiz_due_") or c.startswith("rot_date")],
-        errors="ignore"
-    )
+    df_roster["student_demographics_complete"] = "2"
 
-    # ---------------- OUTPUT ----------------
-    st.subheader("Preview")
+    df_roster = df_roster[redcap_cols].copy()
+
+    st.subheader("Preview of KPLIC REDCap Roster")
     st.dataframe(df_roster, height=400)
 
     st.download_button(
-        "📥 Download formatted Roster CSV",
-        df_roster.to_csv(index=False).encode("utf-8"),
-        file_name="roster_formatted.csv",
+        "📥 Download KPLIC REDCap Roster CSV",
+        df_roster.to_csv(index=False).encode("utf-8-sig"),
+        file_name="kplic_roster_formatted.csv",
         mime="text/csv"
     )
 
+    df_intake = df_roster[
+        ["record_id", "lastname", "firstname", "email", "rotation", "student_demographics_complete"]
+    ].rename(
+        columns={
+            "lastname": "last_name",
+            "firstname": "first_name",
+            "student_demographics_complete": "pediatric_clerkship_intake_form_complete"
+        }
+    )
+
+    st.download_button(
+        "📥 Download KPLIC Intake Form CSV",
+        df_intake.to_csv(index=False).encode("utf-8-sig"),
+        file_name="kplic_roster_intake_form.csv",
+        mime="text/csv"
+    )
+    
 elif instrument == "Roster_Updater":
     st.header("🔖 Roster Updater")
     st.markdown("[🔗 Roster Website](https://oasis.pennstatehealth.net/admin/course/roster/)")
