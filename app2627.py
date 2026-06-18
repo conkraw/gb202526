@@ -1719,23 +1719,50 @@ elif instrument == "Oasis Reminder":
         "Matched / debug view",
         "Raw normalized inputs",
     ])
+
+    def sort_by_student_and_faculty_last_name(df):
+        df = df.copy()
+    
+        df["_student_last_sort"] = (
+            df["student_name"].astype(str).str.strip().str.split().str[-1].str.lower()
+        )
+    
+        df["_faculty_last_sort"] = (
+            df["faculty_name"].astype(str).str.strip().str.split().str[-1].str.lower()
+        )
+    
+        df = df.sort_values(
+            ["_student_last_sort", "_faculty_last_sort", "student_name", "faculty_name"],
+            kind="stable"
+        )
+    
+        return df.drop(columns=["_student_last_sort", "_faculty_last_sort"])
     
     with tab1:
         st.subheader("Power Automate-ready reminder file")
     
-        # Display-only debug copy. This does NOT affect the downloaded CSV.
-        reminders_preview = reminders.copy()
-        
+        reminders_sorted = sort_by_student_and_faculty_last_name(reminders)
+    
+        # Display-only debug copy. This does NOT affect the downloaded CSV columns.
+        reminders_preview = reminders_sorted.copy()
+    
         reminders_preview.insert(
             reminders_preview.columns.get_loc("faculty_name"),
             "student_last_name_debug",
             reminders_preview["student_name"].astype(str).str.split().str[-1]
         )
-        
+    
         st.dataframe(reminders_preview, use_container_width=True)
-        
-        # Download still uses the clean Power Automate file.
-        csv_bytes = reminders.to_csv(index=False).encode("utf-8-sig")
+    
+        # Download is sorted, but does NOT include the debug column.
+        csv_bytes = reminders_sorted.to_csv(index=False).encode("utf-8-sig")
+    
+        st.download_button(
+            label="Download preceptor_eval_reminders.csv",
+            data=csv_bytes,
+            file_name="preceptor_eval_reminders.csv",
+            mime="text/csv",
+        )
     
     
     with tab2:
