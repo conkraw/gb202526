@@ -1505,7 +1505,7 @@ elif instrument == "Oasis Reminder":
             )
             .reset_index()
         )
-        collapsed["faculty_last_name_debug"] = collapsed["faculty_name"].astype(str).str.split().str[-1]
+        collapsed["student_last_name_debug"] = collapsed["student_name"].astype(str).str.split().str[-1]
         collapsed["pending_eval_count"] = (
             collapsed["expected_eval_count"] - collapsed["completed_eval_count"]
         ).clip(lower=0)
