@@ -13,7 +13,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.
 
 
 # choose which instrument you want to format
-instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater"])
+instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater","Oasis Reminder"])
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
@@ -955,3 +955,631 @@ elif instrument == "Roster_Updater":
         file_name="dropped_students.csv",
         mime="text/csv"
     )
+elif instrument == "Oasis Reminder":
+    from __future__ import annotations
+    
+    import re
+    from io import BytesIO
+    from urllib.parse import quote_plus
+    
+    import pandas as pd
+    import streamlit as st
+    
+    
+    # -----------------------------
+    # Defaults
+    # -----------------------------
+    DEFAULT_EVAL = "Clinical Assessment of Student"
+    DEFAULT_REDCAP_BASE = "https://redcap.ctsi.psu.edu/surveys/?s=C7EJ3MPDMCMCFJEP"
+    
+    
+    # -----------------------------
+    # General helpers
+    # -----------------------------
+    def read_csv_any(uploaded_file) -> pd.DataFrame:
+        """Read a user-uploaded CSV with a few encoding fallbacks."""
+        if uploaded_file is None:
+            return pd.DataFrame()
+    
+        raw = uploaded_file.getvalue()
+        last_error = None
+    
+        for enc in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                return pd.read_csv(BytesIO(raw), dtype=str, encoding=enc).fillna("")
+            except Exception as e:
+                last_error = e
+    
+        raise ValueError(f"Could not read CSV. Last error: {last_error}")
+    
+    
+    def normalize_colnames(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
+        return df
+    
+    
+    def first_existing_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+    
+    
+    def clean_text(x) -> str:
+        return re.sub(r"\s+", " ", str(x or "").strip())
+    
+    
+    def clean_eval_name(x) -> str:
+        """Normalize eval names from both files: remove leading asterisks, normalize spacing/case."""
+        s = clean_text(x)
+        s = s.lstrip("*").strip()
+        return re.sub(r"\s+", " ", s).lower()
+    
+    
+    def display_eval_name(x) -> str:
+        """Human-facing eval name."""
+        s = clean_text(x).lstrip("*").strip()
+        return re.sub(r"\s+", " ", s)
+    
+    
+    def clean_email(x) -> str:
+        return clean_text(x).lower()
+    
+    
+    def clean_id(x) -> str:
+        return clean_text(x).lower()
+    
+    
+    def clean_name_for_display(x) -> str:
+        """
+        Convert 'Last, First; MD2028' to 'First Last' for readability.
+        Leaves already-readable names alone.
+        """
+        s = clean_text(x)
+        s = re.sub(r";\s*MD\d{4}", "", s, flags=re.IGNORECASE).strip()
+        if "," in s:
+            last, first = s.split(",", 1)
+            return f"{first.strip()} {last.strip()}".strip()
+        return s
+    
+    
+    def to_date(s: pd.Series) -> pd.Series:
+        return pd.to_datetime(s, errors="coerce").dt.normalize()
+    
+    
+    def make_prefill_link(base_url: str, student_name: str, faculty_name: str, partial: bool = False) -> str:
+        if not base_url:
+            return ""
+        url = f"{base_url}&student={quote_plus(str(student_name).strip())}&preceptor={quote_plus(str(faculty_name).strip())}"
+        if partial:
+            # Your existing shortcut values. Keep/edit as needed.
+            url += "&complete=1&ph=3&ch=3&pp=3&cp=3"
+        return url
+    
+    
+    def safe_for_power_automate(value) -> str:
+        """
+        Keep CSV simple for Flow/Power Automate:
+        - no embedded line breaks
+        - replace commas with hyphens, matching your prior scripts
+        - no double quotes
+        """
+        s = str(value or "")
+        s = s.replace(",", " -")
+        s = s.replace('"', "")
+        s = s.replace("\r", " ").replace("\n", " ")
+        return re.sub(r"\s+", " ", s).strip()
+    
+    
+    # -----------------------------
+    # Data preparation
+    # -----------------------------
+    def prepare_expected_associations(
+        assoc_raw: pd.DataFrame,
+        selected_eval_key: str,
+        as_of_date: pd.Timestamp,
+        date_mode: str,
+        include_all_students: bool,
+    ) -> pd.DataFrame:
+        """
+        Convert raw evaluation_associations file to one expected-evaluation row per
+        student/faculty/evaluation association.
+        """
+        df = normalize_colnames(assoc_raw)
+    
+        required = [
+            "Faculty Name",
+            "Faculty Username",
+            "Faculty External ID",
+            "Faculty Email",
+            "Student Name",
+            "Student Username",
+            "Student External ID",
+            "Student Email",
+            "Manual Evaluations",
+        ]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"Association file is missing expected column(s): {missing}")
+    
+        # Prefer evaluation-period dates; fall back to course dates.
+        eval_start_col = first_existing_col(df, ["Evaluation Period Start Date", "Start Date"])
+        eval_end_col = first_existing_col(df, ["Evaluation Period End Date", "End Date"])
+        course_start_col = first_existing_col(df, ["Start Date"])
+        course_end_col = first_existing_col(df, ["End Date"])
+    
+        df["expected_start_date"] = df[eval_start_col] if eval_start_col else ""
+        df["expected_end_date"] = df[eval_end_col] if eval_end_col else ""
+    
+        # If eval dates are blank, fall back row-wise to course dates.
+        if course_start_col:
+            df["expected_start_date"] = df["expected_start_date"].replace("", pd.NA).fillna(df[course_start_col])
+        if course_end_col:
+            df["expected_end_date"] = df["expected_end_date"].replace("", pd.NA).fillna(df[course_end_col])
+    
+        # Remove all-student/global rows by default.
+        if not include_all_students:
+            df = df[
+                ~df["Student External ID"].astype(str).str.strip().str.lower().eq("all students")
+            ].copy()
+    
+        # Remove rows marked for deletion if present.
+        if "Delete" in df.columns:
+            df = df[df["Delete"].astype(str).str.strip().eq("")].copy()
+    
+        # Explode manual evaluations separated by pipes.
+        df["manual_eval_item"] = df["Manual Evaluations"].astype(str).str.split("|")
+        df = df.explode("manual_eval_item").copy()
+        df["evaluation_key"] = df["manual_eval_item"].apply(clean_eval_name)
+        df["evaluation_type"] = df["manual_eval_item"].apply(display_eval_name)
+    
+        # Drop blanks and common non-reminder categories.
+        df = df[df["evaluation_key"].ne("")].copy()
+    
+        # Keep only the selected eval.
+        df = df[df["evaluation_key"].eq(selected_eval_key)].copy()
+    
+        # Standard keys.
+        df["record_id"] = df["Student External ID"].apply(clean_id)
+        df["student_username_key"] = df["Student Username"].apply(clean_id)
+        df["student_name"] = df["Student Name"].apply(clean_name_for_display)
+        df["student_email"] = df["Student Email"].apply(clean_email)
+    
+        df["faculty_name"] = df["Faculty Name"].apply(clean_name_for_display)
+        df["faculty_username_key"] = df["Faculty Username"].apply(clean_id)
+        df["faculty_external_id_key"] = df["Faculty External ID"].apply(clean_id)
+        df["faculty_email"] = df["Faculty Email"].apply(clean_email)
+    
+        df["expected_start"] = to_date(df["expected_start_date"])
+        df["expected_end"] = to_date(df["expected_end_date"])
+    
+        # Date filter for reminders.
+        if date_mode == "Active as of selected date":
+            df = df[
+                (df["expected_start"].notna())
+                & (df["expected_end"].notna())
+                & (df["expected_start"] <= as_of_date)
+                & (df["expected_end"] >= as_of_date)
+            ].copy()
+        elif date_mode == "Evaluation period ended on/before selected date":
+            df = df[
+                (df["expected_end"].notna())
+                & (df["expected_end"] <= as_of_date)
+            ].copy()
+        elif date_mode == "No date filter":
+            pass
+    
+        keep = [
+            "record_id",
+            "student_username_key",
+            "student_name",
+            "student_email",
+            "faculty_name",
+            "faculty_username_key",
+            "faculty_external_id_key",
+            "faculty_email",
+            "evaluation_key",
+            "evaluation_type",
+            "expected_start",
+            "expected_end",
+        ]
+        return df[keep].drop_duplicates().reset_index(drop=True)
+    
+    
+    def prepare_completed_oasis(oasis_raw: pd.DataFrame, selected_eval_key: str) -> pd.DataFrame:
+        """
+        Convert raw OASIS question-level export to one row per submitted evaluation.
+        """
+        df = normalize_colnames(oasis_raw)
+    
+        # Normalize common OASIS column variants.
+        rename = {
+            "Answer text": "Answer Text",
+            "Multiple Choice Value": "Mult Choice Value",
+            "Student External ID": "Student External ID",
+            "Evaluator External ID": "Evaluator External ID",
+        }
+        for old, new in rename.items():
+            if old in df.columns and new not in df.columns:
+                df = df.rename(columns={old: new})
+    
+        required = [
+            "Student",
+            "Student Username",
+            "Student External ID",
+            "Student Email",
+            "Evaluator",
+            "Evaluator Username",
+            "Evaluator External ID",
+            "Evaluator Email",
+            "Evaluation",
+            "Submit Date",
+        ]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise ValueError(f"OASIS export is missing expected column(s): {missing}")
+    
+        start_col = first_existing_col(df, ["Start Date", "Evaluation Start Date"])
+        end_col = first_existing_col(df, ["End Date", "Evaluation End Date"])
+    
+        df["evaluation_key"] = df["Evaluation"].apply(clean_eval_name)
+        df["evaluation_type"] = df["Evaluation"].apply(display_eval_name)
+        df = df[df["evaluation_key"].eq(selected_eval_key)].copy()
+    
+        df["submit_dt"] = pd.to_datetime(df["Submit Date"], errors="coerce")
+        df = df[df["submit_dt"].notna()].copy()
+    
+        df["record_id"] = df["Student External ID"].apply(clean_id)
+        df["student_username_key"] = df["Student Username"].apply(clean_id)
+        df["student_name"] = df["Student"].apply(clean_name_for_display)
+        df["student_email"] = df["Student Email"].apply(clean_email)
+    
+        df["faculty_name"] = df["Evaluator"].apply(clean_name_for_display)
+        df["faculty_username_key"] = df["Evaluator Username"].apply(clean_id)
+        df["faculty_external_id_key"] = df["Evaluator External ID"].apply(clean_id)
+        df["faculty_email"] = df["Evaluator Email"].apply(clean_email)
+    
+        df["oasis_start"] = to_date(df[start_col]) if start_col else pd.NaT
+        df["oasis_end"] = to_date(df[end_col]) if end_col else pd.NaT
+    
+        # OASIS is usually question-level. "Form Record" is best if present.
+        # If not, the combination below is still one submitted evaluation instance.
+        dedupe_cols = [
+            "record_id",
+            "student_username_key",
+            "faculty_username_key",
+            "faculty_external_id_key",
+            "faculty_email",
+            "evaluation_key",
+            "submit_dt",
+        ]
+        if "Form Record" in df.columns:
+            dedupe_cols = ["Form Record"]
+    
+        keep = [
+            "record_id",
+            "student_username_key",
+            "student_name",
+            "student_email",
+            "faculty_name",
+            "faculty_username_key",
+            "faculty_external_id_key",
+            "faculty_email",
+            "evaluation_key",
+            "evaluation_type",
+            "submit_dt",
+            "oasis_start",
+            "oasis_end",
+        ]
+        return df.drop_duplicates(subset=dedupe_cols)[keep].reset_index(drop=True)
+    
+    
+    # -----------------------------
+    # Matching logic
+    # -----------------------------
+    def row_matches(expected_row: pd.Series, completed: pd.DataFrame, allow_email_fallback: bool, allow_username_fallback: bool) -> pd.DataFrame:
+        """
+        Match expected association to completed OASIS submission.
+    
+        Important design choice:
+        - Do not require date equality. Raw associations may use evaluation-period dates,
+          while raw OASIS exports often use course dates.
+        - Primary match: student external ID + evaluator external ID + evaluation.
+        - Fallbacks: evaluator email and/or evaluator username when external ID is blank.
+        """
+        c = completed[completed["evaluation_key"].eq(expected_row["evaluation_key"])].copy()
+    
+        # Student match.
+        c = c[c["record_id"].eq(expected_row["record_id"])].copy()
+    
+        if c.empty:
+            return c
+    
+        # Evaluator match priority.
+        expected_ext = expected_row.get("faculty_external_id_key", "")
+        expected_email = expected_row.get("faculty_email", "")
+        expected_username = expected_row.get("faculty_username_key", "")
+    
+        masks = []
+    
+        if expected_ext:
+            masks.append(c["faculty_external_id_key"].eq(expected_ext))
+    
+        if allow_email_fallback and expected_email:
+            masks.append(c["faculty_email"].eq(expected_email))
+    
+        if allow_username_fallback and expected_username:
+            masks.append(c["faculty_username_key"].eq(expected_username))
+    
+        if not masks:
+            return c.iloc[0:0].copy()
+    
+        combined_mask = masks[0]
+        for m in masks[1:]:
+            combined_mask = combined_mask | m
+    
+        return c[combined_mask].copy()
+    
+    
+    def build_reminder_report(
+        expected: pd.DataFrame,
+        completed: pd.DataFrame,
+        allow_email_fallback: bool,
+        allow_username_fallback: bool,
+        redcap_base_url: str,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Return:
+          reminder_report: Power Automate-ready pending rows
+          debug_report: all expected rows with matched count/status
+        """
+        rows = []
+    
+        for _, e in expected.iterrows():
+            matches = row_matches(e, completed, allow_email_fallback, allow_username_fallback)
+            completed_count = len(matches)
+    
+            row = e.to_dict()
+            row["completed_eval_count"] = completed_count
+            row["completed_submit_dates"] = "; ".join(
+                matches["submit_dt"].dt.strftime("%Y-%m-%d %H:%M:%S").dropna().unique().tolist()
+            )
+            row["matched_faculty_names"] = "; ".join(
+                sorted(set([x for x in matches["faculty_name"].astype(str).tolist() if x.strip()]))
+            )
+            rows.append(row)
+    
+        debug = pd.DataFrame(rows)
+    
+        if debug.empty:
+            return pd.DataFrame(), debug
+    
+        # Collapse duplicated expected associations for the same student/faculty/eval.
+        group_cols = [
+            "record_id",
+            "faculty_email",
+            "faculty_name",
+            "student_name",
+            "student_email",
+            "evaluation_type",
+            "evaluation_key",
+        ]
+    
+        collapsed = (
+            debug.groupby(group_cols, dropna=False)
+            .agg(
+                expected_eval_count=("evaluation_key", "size"),
+                completed_eval_count=("completed_eval_count", "max"),
+                first_expected_start=("expected_start", "min"),
+                last_expected_end=("expected_end", "max"),
+                completed_submit_dates=("completed_submit_dates", lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""}))),
+                matched_faculty_names=("matched_faculty_names", lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""}))),
+            )
+            .reset_index()
+        )
+    
+        collapsed["pending_eval_count"] = (
+            collapsed["expected_eval_count"] - collapsed["completed_eval_count"]
+        ).clip(lower=0)
+    
+        collapsed["duplicate_match_flag"] = collapsed["expected_eval_count"].apply(lambda n: "YES" if n > 1 else "")
+        collapsed["needs_reminder"] = collapsed["pending_eval_count"].apply(lambda n: "YES" if n > 0 else "")
+    
+        def note(row):
+            if row["pending_eval_count"] <= 0:
+                return ""
+            if row["expected_eval_count"] == 1 and row["completed_eval_count"] == 0:
+                return "The student reported working with you, but we have not yet received the corresponding evaluation."
+            if row["expected_eval_count"] > 1 and row["completed_eval_count"] == 0:
+                return (
+                    f"The student reported working with you on {row['expected_eval_count']} occasions, "
+                    "but we have not yet received any completed evaluations."
+                )
+            return (
+                f"The student reported working with you on {row['expected_eval_count']} occasions. "
+                f"We have received {row['completed_eval_count']} completed evaluation(s) so far and are still missing "
+                f"{row['pending_eval_count']}."
+            )
+    
+        collapsed["reminder_note"] = collapsed.apply(note, axis=1)
+    
+        collapsed["blank_form_link"] = collapsed.apply(
+            lambda r: make_prefill_link(redcap_base_url, r["student_name"], r["faculty_name"], partial=False),
+            axis=1,
+        )
+        collapsed["partial_form_link"] = collapsed.apply(
+            lambda r: make_prefill_link(redcap_base_url, r["student_name"], r["faculty_name"], partial=True),
+            axis=1,
+        )
+    
+        reminders = collapsed[collapsed["needs_reminder"].eq("YES")].copy()
+    
+        final_cols = [
+            "faculty_email",
+            "faculty_name",
+            "student_name",
+            "student_email",
+            "evaluation_type",
+            "expected_eval_count",
+            "completed_eval_count",
+            "pending_eval_count",
+            "duplicate_match_flag",
+            "reminder_note",
+            "blank_form_link",
+            "partial_form_link",
+            "record_id",
+            "first_expected_start",
+            "last_expected_end",
+        ]
+    
+        reminders = reminders[final_cols].copy()
+    
+        # Power Automate cleanup.
+        for col in reminders.columns:
+            reminders[col] = reminders[col].apply(safe_for_power_automate)
+    
+        return reminders.reset_index(drop=True), collapsed.reset_index(drop=True)
+    
+    
+    # -----------------------------
+    # Streamlit UI
+    # -----------------------------
+    st.set_page_config(
+        page_title="OASIS Preceptor Reminder Builder",
+        page_icon="📋",
+        layout="wide",
+    )
+    
+    st.title("📋 OASIS Preceptor Evaluation Reminder Builder")
+    st.write(
+        "Upload the raw OASIS evaluation export and the raw evaluation associations/preceptor matching file. "
+        "The app will cross-reference expected evaluations against submitted evaluations and generate a "
+        "Power Automate-ready reminder CSV."
+    )
+    
+    with st.sidebar:
+        st.header("Files")
+        assoc_file = st.file_uploader(
+            "Raw preceptor matching / evaluation associations CSV",
+            type=["csv"],
+            key="assoc_file",
+        )
+        oasis_file = st.file_uploader(
+            "Raw OASIS evaluation submission export CSV",
+            type=["csv"],
+            key="oasis_file",
+        )
+    
+        st.header("Reminder settings")
+        eval_name = st.text_input("Evaluation to track", value=DEFAULT_EVAL)
+        selected_eval_key = clean_eval_name(eval_name)
+    
+        as_of_date = pd.to_datetime(
+            st.date_input("As-of date", value=pd.Timestamp.today().date())
+        ).normalize()
+    
+        date_mode = st.selectbox(
+            "Which associations should be considered?",
+            [
+                "Active as of selected date",
+                "Evaluation period ended on/before selected date",
+                "No date filter",
+            ],
+            index=0,
+        )
+    
+        include_all_students = st.checkbox("Include 'All Students' rows", value=False)
+        allow_email_fallback = st.checkbox("Allow evaluator email fallback", value=True)
+        allow_username_fallback = st.checkbox("Allow evaluator username fallback", value=True)
+    
+        st.header("Optional REDCap link")
+        redcap_base_url = st.text_input("REDCap survey base URL", value=DEFAULT_REDCAP_BASE)
+    
+    run_clicked = st.button("Build reminder CSV", type="primary")
+    
+    if not run_clicked:
+        st.info("Upload both CSV files, adjust the settings, then click **Build reminder CSV**.")
+        st.stop()
+    
+    if assoc_file is None or oasis_file is None:
+        st.error("Please upload both the raw association file and the raw OASIS evaluation export.")
+        st.stop()
+    
+    try:
+        assoc_raw = read_csv_any(assoc_file)
+        oasis_raw = read_csv_any(oasis_file)
+    
+        expected = prepare_expected_associations(
+            assoc_raw=assoc_raw,
+            selected_eval_key=selected_eval_key,
+            as_of_date=as_of_date,
+            date_mode=date_mode,
+            include_all_students=include_all_students,
+        )
+    
+        completed = prepare_completed_oasis(
+            oasis_raw=oasis_raw,
+            selected_eval_key=selected_eval_key,
+        )
+    
+        reminders, debug = build_reminder_report(
+            expected=expected,
+            completed=completed,
+            allow_email_fallback=allow_email_fallback,
+            allow_username_fallback=allow_username_fallback,
+            redcap_base_url=redcap_base_url,
+        )
+    
+    except Exception as e:
+        st.exception(e)
+        st.stop()
+    
+    # -----------------------------
+    # Results
+    # -----------------------------
+    st.success("Done.")
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Expected associations considered", len(expected))
+    m2.metric("Submitted evaluations found", len(completed))
+    m3.metric("Reminder rows", len(reminders))
+    
+    tab1, tab2, tab3 = st.tabs(["Power Automate CSV", "Matched / debug view", "Raw normalized inputs"])
+    
+    with tab1:
+        st.subheader("Power Automate-ready reminder file")
+        st.dataframe(reminders, use_container_width=True)
+    
+        csv_bytes = reminders.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="Download preceptor_eval_reminders.csv",
+            data=csv_bytes,
+            file_name="preceptor_eval_reminders.csv",
+            mime="text/csv",
+        )
+    
+    with tab2:
+        st.subheader("All expected rows after matching")
+        st.write(
+            "Rows with `pending_eval_count = 0` were matched to a submitted OASIS evaluation. "
+            "This tab is the best place to troubleshoot cases like Kaelor/Madeline."
+        )
+        st.dataframe(debug, use_container_width=True)
+    
+        debug_bytes = debug.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="Download debug_match_report.csv",
+            data=debug_bytes,
+            file_name="debug_match_report.csv",
+            mime="text/csv",
+        )
+    
+    with tab3:
+        st.subheader("Normalized expected associations")
+        st.dataframe(expected, use_container_width=True)
+    
+        st.subheader("Normalized completed OASIS submissions")
+        st.dataframe(completed, use_container_width=True)
+
+    
