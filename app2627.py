@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 import streamlit as st
 import pandas as pd
@@ -6,7 +7,7 @@ from docx import Document
 import pytz
 import pandas as pd
 import streamlit as st
-from __future__ import annotations
+
 from urllib.parse import quote_plus
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
