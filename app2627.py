@@ -1741,6 +1741,7 @@ elif instrument == "Oasis Reminder":
     with tab1:
         st.subheader("Combined Power Automate-ready reminder file")
     
+        # Sort the real reminder data
         reminders_sorted = reminders.copy()
     
         reminders_sorted["_student_last_sort"] = (
@@ -1750,24 +1751,31 @@ elif instrument == "Oasis Reminder":
             reminders_sorted["faculty_name"].astype(str).str.strip().str.split().str[-1].str.lower()
         )
     
-        reminders_sorted = reminders_sorted.sort_values(
-            by=["_student_last_sort", "_faculty_last_sort", "student_name", "faculty_name"],
-            ascending=True,
-            kind="mergesort"
-        ).drop(columns=["_student_last_sort", "_faculty_last_sort"])
+        reminders_sorted = (
+            reminders_sorted
+            .sort_values(
+                by=["_student_last_sort", "_faculty_last_sort", "student_name", "faculty_name"],
+                ascending=True,
+                kind="mergesort"
+            )
+            .drop(columns=["_student_last_sort", "_faculty_last_sort"])
+        )
     
-        # Screen-only preview with debug column
+        # Preview-only copy with debug column
         reminders_preview = reminders_sorted.copy()
+    
         reminders_preview.insert(
             reminders_preview.columns.get_loc("faculty_name"),
             "student_last_name_debug",
             reminders_preview["student_name"].astype(str).str.split().str[-1]
         )
     
+        # This shows the debug column
         st.dataframe(reminders_preview, use_container_width=True)
     
-        # Download uses sorted file WITHOUT debug column
+        # This downloads WITHOUT the debug column
         csv_bytes = reminders_sorted.to_csv(index=False).encode("utf-8-sig")
+    
         st.download_button(
             label="Download combined_preceptor_eval_reminders.csv",
             data=csv_bytes,
