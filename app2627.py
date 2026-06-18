@@ -7,8 +7,14 @@ from docx import Document
 import pytz
 import pandas as pd
 import streamlit as st
+from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from io import BytesIO
+from typing import Iterable
 from urllib.parse import quote_plus
+
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
 st.title("🔄 REDCap Instruments Formatter")
@@ -959,16 +965,39 @@ elif instrument == "Roster_Updater":
         mime="text/csv"
     )
 elif instrument == "Oasis Reminder":
-    # -----------------------------
-    # Defaults
-    # -----------------------------
-    DEFAULT_EVAL = "Clinical Assessment of Student"
-    DEFAULT_REDCAP_BASE = "https://redcap.ctsi.psu.edu/surveys/?s=C7EJ3MPDMCMCFJEP"
+    # ============================================================
+    # Evaluation configuration
+    # ============================================================
+    @dataclass(frozen=True)
+    class EvalConfig:
+        label: str                    # sidebar/display label
+        match_name: str               # raw OASIS / association form name after cleaning
+        output_name: str              # value written to output CSV
+        redcap_base_url: str          # prefilled survey URL base
+        note_style: str               # "cas" or "hp" or "generic"
     
     
-    # -----------------------------
+    EVAL_CONFIGS: list[EvalConfig] = [
+        EvalConfig(
+            label="Clinical Assessment of Student",
+            match_name="Clinical Assessment of Student",
+            output_name="Clinical Assessment of Student",
+            redcap_base_url="https://redcap.ctsi.psu.edu/surveys/?s=C7EJ3MPDMCMCFJEP",
+            note_style="cas",
+        ),
+        EvalConfig(
+            label="Observed H&P / PEDS History Taking & Physical Exam",
+            match_name="PEDS History Taking & Physical Exam",
+            output_name="PEDS History Taking & Physical Exam",
+            redcap_base_url="https://redcap.ctsi.psu.edu/surveys/?s=8C7DLPNX8LT9HTJP",
+            note_style="hp",
+        ),
+    ]
+    
+    
+    # ============================================================
     # General helpers
-    # -----------------------------
+    # ============================================================
     def read_csv_any(uploaded_file) -> pd.DataFrame:
         """Read a user-uploaded CSV with a few encoding fallbacks."""
         if uploaded_file is None:
@@ -980,7 +1009,7 @@ elif instrument == "Oasis Reminder":
         for enc in ("utf-8-sig", "utf-8", "latin-1"):
             try:
                 return pd.read_csv(BytesIO(raw), dtype=str, encoding=enc).fillna("")
-            except Exception as e:
+            except Exception as e:  # pragma: no cover - displayed in Streamlit
                 last_error = e
     
         raise ValueError(f"Could not read CSV. Last error: {last_error}")
@@ -992,7 +1021,7 @@ elif instrument == "Oasis Reminder":
         return df
     
     
-    def first_existing_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    def first_existing_col(df: pd.DataFrame, candidates: Iterable[str]) -> str | None:
         for c in candidates:
             if c in df.columns:
                 return c
@@ -1004,14 +1033,14 @@ elif instrument == "Oasis Reminder":
     
     
     def clean_eval_name(x) -> str:
-        """Normalize eval names from both files: remove leading asterisks, normalize spacing/case."""
+        """Normalize evaluation names from both files: remove leading asterisks, normalize spacing/case."""
         s = clean_text(x)
         s = s.lstrip("*").strip()
         return re.sub(r"\s+", " ", s).lower()
     
     
     def display_eval_name(x) -> str:
-        """Human-facing eval name."""
+        """Human-facing evaluation name."""
         s = clean_text(x).lstrip("*").strip()
         return re.sub(r"\s+", " ", s)
     
@@ -1026,14 +1055,20 @@ elif instrument == "Oasis Reminder":
     
     def clean_name_for_display(x) -> str:
         """
-        Convert 'Last, First; MD2028' to 'First Last' for readability.
+        Convert 'Last, First; MD2028' or 'Last - First' to 'First Last'.
         Leaves already-readable names alone.
         """
         s = clean_text(x)
         s = re.sub(r";\s*MD\d{4}", "", s, flags=re.IGNORECASE).strip()
+    
+        if " - " in s:
+            last, first = s.split(" - ", 1)
+            return f"{first.strip()} {last.strip()}".strip()
+    
         if "," in s:
             last, first = s.split(",", 1)
             return f"{first.strip()} {last.strip()}".strip()
+    
         return s
     
     
@@ -1044,10 +1079,17 @@ elif instrument == "Oasis Reminder":
     def make_prefill_link(base_url: str, student_name: str, faculty_name: str, partial: bool = False) -> str:
         if not base_url:
             return ""
-        url = f"{base_url}&student={quote_plus(str(student_name).strip())}&preceptor={quote_plus(str(faculty_name).strip())}"
+    
+        url = (
+            f"{base_url}"
+            f"&student={quote_plus(str(student_name).strip())}"
+            f"&preceptor={quote_plus(str(faculty_name).strip())}"
+        )
+    
         if partial:
-            # Your existing shortcut values. Keep/edit as needed.
+            # Existing shortcut values from your prior scripts. Edit/remove if you ever change the REDCap forms.
             url += "&complete=1&ph=3&ch=3&pp=3&cp=3"
+    
         return url
     
     
@@ -1065,21 +1107,49 @@ elif instrument == "Oasis Reminder":
         return re.sub(r"\s+", " ", s).strip()
     
     
-    # -----------------------------
+    def config_maps(configs: list[EvalConfig]) -> tuple[dict[str, EvalConfig], dict[str, str]]:
+        """Return maps keyed by normalized raw match names and sidebar labels."""
+        by_key = {clean_eval_name(c.match_name): c for c in configs}
+        label_to_key = {c.label: clean_eval_name(c.match_name) for c in configs}
+        return by_key, label_to_key
+    
+    
+    # ============================================================
     # Data preparation
-    # -----------------------------
+    # ============================================================
     def prepare_expected_associations(
         assoc_raw: pd.DataFrame,
-        selected_eval_key: str,
+        selected_eval_keys: set[str],
+        eval_config_by_key: dict[str, EvalConfig],
         as_of_date: pd.Timestamp,
         date_mode: str,
         include_all_students: bool,
     ) -> pd.DataFrame:
         """
-        Convert raw evaluation_associations file to one expected-evaluation row per
-        student/faculty/evaluation association.
+        Convert raw evaluation_associations / preceptor matching file to one expected-evaluation row
+        per student/faculty/evaluation association.
         """
         df = normalize_colnames(assoc_raw)
+    
+        # Support raw OASIS association headers and common REDCap-style lowercase headers.
+        rename_variants = {
+            "faculty_name": "Faculty Name",
+            "faculty_username": "Faculty Username",
+            "faculty_external_id": "Faculty External ID",
+            "faculty_email": "Faculty Email",
+            "student_name": "Student Name",
+            "student_username": "Student Username",
+            "record_id": "Student External ID",
+            "student_email": "Student Email",
+            "manual_evaluations": "Manual Evaluations",
+            "start_date": "Start Date",
+            "end_date": "End Date",
+            "eval_period_start_date": "Evaluation Period Start Date",
+            "eval_period_end_date": "Evaluation Period End Date",
+        }
+        present = {old: new for old, new in rename_variants.items() if old in df.columns and new not in df.columns}
+        if present:
+            df = df.rename(columns=present)
     
         required = [
             "Faculty Name",
@@ -1097,15 +1167,14 @@ elif instrument == "Oasis Reminder":
             raise ValueError(f"Association file is missing expected column(s): {missing}")
     
         # Prefer evaluation-period dates; fall back to course dates.
-        eval_start_col = first_existing_col(df, ["Evaluation Period Start Date", "Start Date"])
-        eval_end_col = first_existing_col(df, ["Evaluation Period End Date", "End Date"])
-        course_start_col = first_existing_col(df, ["Start Date"])
-        course_end_col = first_existing_col(df, ["End Date"])
+        eval_start_col = first_existing_col(df, ["Evaluation Period Start Date", "eval_period_start_date"])
+        eval_end_col = first_existing_col(df, ["Evaluation Period End Date", "eval_period_end_date"])
+        course_start_col = first_existing_col(df, ["Start Date", "start_date"])
+        course_end_col = first_existing_col(df, ["End Date", "end_date"])
     
         df["expected_start_date"] = df[eval_start_col] if eval_start_col else ""
         df["expected_end_date"] = df[eval_end_col] if eval_end_col else ""
     
-        # If eval dates are blank, fall back row-wise to course dates.
         if course_start_col:
             df["expected_start_date"] = df["expected_start_date"].replace("", pd.NA).fillna(df[course_start_col])
         if course_end_col:
@@ -1125,13 +1194,17 @@ elif instrument == "Oasis Reminder":
         df["manual_eval_item"] = df["Manual Evaluations"].astype(str).str.split("|")
         df = df.explode("manual_eval_item").copy()
         df["evaluation_key"] = df["manual_eval_item"].apply(clean_eval_name)
-        df["evaluation_type"] = df["manual_eval_item"].apply(display_eval_name)
     
-        # Drop blanks and common non-reminder categories.
+        # Drop blanks and keep selected tracked evaluations only.
         df = df[df["evaluation_key"].ne("")].copy()
+        df = df[df["evaluation_key"].isin(selected_eval_keys)].copy()
     
-        # Keep only the selected eval.
-        df = df[df["evaluation_key"].eq(selected_eval_key)].copy()
+        df["evaluation_type"] = df["evaluation_key"].map(
+            lambda k: eval_config_by_key.get(k).output_name if k in eval_config_by_key else display_eval_name(k)
+        )
+        df["evaluation_label"] = df["evaluation_key"].map(
+            lambda k: eval_config_by_key.get(k).label if k in eval_config_by_key else display_eval_name(k)
+        )
     
         # Standard keys.
         df["record_id"] = df["Student External ID"].apply(clean_id)
@@ -1162,6 +1235,8 @@ elif instrument == "Oasis Reminder":
             ].copy()
         elif date_mode == "No date filter":
             pass
+        else:
+            raise ValueError(f"Unknown date_mode: {date_mode}")
     
         keep = [
             "record_id",
@@ -1174,28 +1249,38 @@ elif instrument == "Oasis Reminder":
             "faculty_email",
             "evaluation_key",
             "evaluation_type",
+            "evaluation_label",
             "expected_start",
             "expected_end",
         ]
         return df[keep].drop_duplicates().reset_index(drop=True)
     
     
-    def prepare_completed_oasis(oasis_raw: pd.DataFrame, selected_eval_key: str) -> pd.DataFrame:
+    def prepare_completed_oasis(
+        oasis_raw: pd.DataFrame,
+        selected_eval_keys: set[str],
+        eval_config_by_key: dict[str, EvalConfig],
+    ) -> pd.DataFrame:
         """
         Convert raw OASIS question-level export to one row per submitted evaluation.
         """
         df = normalize_colnames(oasis_raw)
     
         # Normalize common OASIS column variants.
-        rename = {
+        rename_variants = {
             "Answer text": "Answer Text",
+            "answer text": "Answer Text",
             "Multiple Choice Value": "Mult Choice Value",
-            "Student External ID": "Student External ID",
-            "Evaluator External ID": "Evaluator External ID",
+            "Multiple choice value": "Mult Choice Value",
+            "Student external id": "Student External ID",
+            "Evaluator external id": "Evaluator External ID",
+            "Submit date": "Submit Date",
+            "Evaluator email": "Evaluator Email",
+            "Student email": "Student Email",
         }
-        for old, new in rename.items():
-            if old in df.columns and new not in df.columns:
-                df = df.rename(columns={old: new})
+        present = {old: new for old, new in rename_variants.items() if old in df.columns and new not in df.columns}
+        if present:
+            df = df.rename(columns=present)
     
         required = [
             "Student",
@@ -1217,8 +1302,14 @@ elif instrument == "Oasis Reminder":
         end_col = first_existing_col(df, ["End Date", "Evaluation End Date"])
     
         df["evaluation_key"] = df["Evaluation"].apply(clean_eval_name)
-        df["evaluation_type"] = df["Evaluation"].apply(display_eval_name)
-        df = df[df["evaluation_key"].eq(selected_eval_key)].copy()
+        df = df[df["evaluation_key"].isin(selected_eval_keys)].copy()
+    
+        df["evaluation_type"] = df["evaluation_key"].map(
+            lambda k: eval_config_by_key.get(k).output_name if k in eval_config_by_key else display_eval_name(k)
+        )
+        df["evaluation_label"] = df["evaluation_key"].map(
+            lambda k: eval_config_by_key.get(k).label if k in eval_config_by_key else display_eval_name(k)
+        )
     
         df["submit_dt"] = pd.to_datetime(df["Submit Date"], errors="coerce")
         df = df[df["submit_dt"].notna()].copy()
@@ -1236,19 +1327,20 @@ elif instrument == "Oasis Reminder":
         df["oasis_start"] = to_date(df[start_col]) if start_col else pd.NaT
         df["oasis_end"] = to_date(df[end_col]) if end_col else pd.NaT
     
-        # OASIS is usually question-level. "Form Record" is best if present.
-        # If not, the combination below is still one submitted evaluation instance.
-        dedupe_cols = [
-            "record_id",
-            "student_username_key",
-            "faculty_username_key",
-            "faculty_external_id_key",
-            "faculty_email",
-            "evaluation_key",
-            "submit_dt",
-        ]
+        # OASIS is usually question-level. Form Record is best if present.
+        # Include evaluation_key in case Form Record is ever reused unexpectedly.
         if "Form Record" in df.columns:
-            dedupe_cols = ["Form Record"]
+            dedupe_cols = ["Form Record", "evaluation_key"]
+        else:
+            dedupe_cols = [
+                "record_id",
+                "student_username_key",
+                "faculty_username_key",
+                "faculty_external_id_key",
+                "faculty_email",
+                "evaluation_key",
+                "submit_dt",
+            ]
     
         keep = [
             "record_id",
@@ -1261,6 +1353,7 @@ elif instrument == "Oasis Reminder":
             "faculty_email",
             "evaluation_key",
             "evaluation_type",
+            "evaluation_label",
             "submit_dt",
             "oasis_start",
             "oasis_end",
@@ -1268,10 +1361,15 @@ elif instrument == "Oasis Reminder":
         return df.drop_duplicates(subset=dedupe_cols)[keep].reset_index(drop=True)
     
     
-    # -----------------------------
+    # ============================================================
     # Matching logic
-    # -----------------------------
-    def row_matches(expected_row: pd.Series, completed: pd.DataFrame, allow_email_fallback: bool, allow_username_fallback: bool) -> pd.DataFrame:
+    # ============================================================
+    def row_matches(
+        expected_row: pd.Series,
+        completed: pd.DataFrame,
+        allow_email_fallback: bool,
+        allow_username_fallback: bool,
+    ) -> pd.DataFrame:
         """
         Match expected association to completed OASIS submission.
     
@@ -1283,8 +1381,16 @@ elif instrument == "Oasis Reminder":
         """
         c = completed[completed["evaluation_key"].eq(expected_row["evaluation_key"])].copy()
     
-        # Student match.
-        c = c[c["record_id"].eq(expected_row["record_id"])].copy()
+        # Student match: external ID first. If external ID is missing, fall back to username.
+        expected_record_id = expected_row.get("record_id", "")
+        expected_student_username = expected_row.get("student_username_key", "")
+    
+        if expected_record_id:
+            c = c[c["record_id"].eq(expected_record_id)].copy()
+        elif expected_student_username:
+            c = c[c["student_username_key"].eq(expected_student_username)].copy()
+        else:
+            return c.iloc[0:0].copy()
     
         if c.empty:
             return c
@@ -1315,17 +1421,42 @@ elif instrument == "Oasis Reminder":
         return c[combined_mask].copy()
     
     
+    def build_reminder_note(note_style: str, expected: int, completed: int) -> str:
+        pending = max(expected - completed, 0)
+        if pending <= 0:
+            return ""
+    
+        if note_style == "hp":
+            if expected == 1 and completed == 0:
+                return "The student indicated that you observed an H&P encounter with them, but we have not yet received the corresponding formative assessment."
+            if expected > 1 and completed == 0:
+                return f"The student indicated that you observed {expected} H&P encounters with them, but we have not yet received any formative assessments."
+            return f"The student indicated that you observed {expected} H&P encounters with them. We have received {completed} submission(s) so far and are still missing {pending}."
+    
+        if note_style == "cas":
+            if expected == 1 and completed == 0:
+                return "The student reported working with you, but we have not yet received the corresponding evaluation."
+            if expected > 1 and completed == 0:
+                return f"The student reported working with you on {expected} occasions, but we have not yet received any completed evaluations."
+            return f"The student reported working with you on {expected} occasions. We have received {completed} completed evaluation(s) so far and are still missing {pending}."
+    
+        # Generic fallback.
+        if expected == 1 and completed == 0:
+            return "The student reported working with you, but we have not yet received the corresponding evaluation."
+        return f"The student reported {expected} expected evaluation(s). We have received {completed} submission(s) and are still missing {pending}."
+    
+    
     def build_reminder_report(
         expected: pd.DataFrame,
         completed: pd.DataFrame,
         allow_email_fallback: bool,
         allow_username_fallback: bool,
-        redcap_base_url: str,
+        eval_config_by_key: dict[str, EvalConfig],
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Return:
-          reminder_report: Power Automate-ready pending rows
-          debug_report: all expected rows with matched count/status
+          reminders: Power Automate-ready pending rows across all selected evaluation types
+          debug: all expected rows with matched count/status
         """
         rows = []
     
@@ -1339,35 +1470,41 @@ elif instrument == "Oasis Reminder":
                 matches["submit_dt"].dt.strftime("%Y-%m-%d %H:%M:%S").dropna().unique().tolist()
             )
             row["matched_faculty_names"] = "; ".join(
-                sorted(set([x for x in matches["faculty_name"].astype(str).tolist() if x.strip()]))
+                sorted(set(x for x in matches["faculty_name"].astype(str).tolist() if x.strip()))
             )
             rows.append(row)
     
-        debug = pd.DataFrame(rows)
-    
-        if debug.empty:
-            return pd.DataFrame(), debug
+        debug_rows = pd.DataFrame(rows)
+        if debug_rows.empty:
+            return pd.DataFrame(), debug_rows
     
         # Collapse duplicated expected associations for the same student/faculty/eval.
         group_cols = [
             "record_id",
+            "student_email",
+            "student_name",
             "faculty_email",
             "faculty_name",
-            "student_name",
-            "student_email",
-            "evaluation_type",
             "evaluation_key",
+            "evaluation_type",
+            "evaluation_label",
         ]
     
         collapsed = (
-            debug.groupby(group_cols, dropna=False)
+            debug_rows.groupby(group_cols, dropna=False)
             .agg(
                 expected_eval_count=("evaluation_key", "size"),
                 completed_eval_count=("completed_eval_count", "max"),
                 first_expected_start=("expected_start", "min"),
                 last_expected_end=("expected_end", "max"),
-                completed_submit_dates=("completed_submit_dates", lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""}))),
-                matched_faculty_names=("matched_faculty_names", lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""}))),
+                completed_submit_dates=(
+                    "completed_submit_dates",
+                    lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""})),
+                ),
+                matched_faculty_names=(
+                    "matched_faculty_names",
+                    lambda s: "; ".join(sorted(set("; ".join(s).split("; ")) - {""})),
+                ),
             )
             .reset_index()
         )
@@ -1379,30 +1516,27 @@ elif instrument == "Oasis Reminder":
         collapsed["duplicate_match_flag"] = collapsed["expected_eval_count"].apply(lambda n: "YES" if n > 1 else "")
         collapsed["needs_reminder"] = collapsed["pending_eval_count"].apply(lambda n: "YES" if n > 0 else "")
     
-        def note(row):
-            if row["pending_eval_count"] <= 0:
-                return ""
-            if row["expected_eval_count"] == 1 and row["completed_eval_count"] == 0:
-                return "The student reported working with you, but we have not yet received the corresponding evaluation."
-            if row["expected_eval_count"] > 1 and row["completed_eval_count"] == 0:
-                return (
-                    f"The student reported working with you on {row['expected_eval_count']} occasions, "
-                    "but we have not yet received any completed evaluations."
-                )
-            return (
-                f"The student reported working with you on {row['expected_eval_count']} occasions. "
-                f"We have received {row['completed_eval_count']} completed evaluation(s) so far and are still missing "
-                f"{row['pending_eval_count']}."
+        def note_for_row(r: pd.Series) -> str:
+            config = eval_config_by_key.get(r["evaluation_key"])
+            note_style = config.note_style if config else "generic"
+            return build_reminder_note(
+                note_style=note_style,
+                expected=int(r["expected_eval_count"]),
+                completed=int(r["completed_eval_count"]),
             )
     
-        collapsed["reminder_note"] = collapsed.apply(note, axis=1)
+        collapsed["reminder_note"] = collapsed.apply(note_for_row, axis=1)
+    
+        def base_for_row(r: pd.Series) -> str:
+            config = eval_config_by_key.get(r["evaluation_key"])
+            return config.redcap_base_url if config else ""
     
         collapsed["blank_form_link"] = collapsed.apply(
-            lambda r: make_prefill_link(redcap_base_url, r["student_name"], r["faculty_name"], partial=False),
+            lambda r: make_prefill_link(base_for_row(r), r["student_name"], r["faculty_name"], partial=False),
             axis=1,
         )
         collapsed["partial_form_link"] = collapsed.apply(
-            lambda r: make_prefill_link(redcap_base_url, r["student_name"], r["faculty_name"], partial=True),
+            lambda r: make_prefill_link(base_for_row(r), r["student_name"], r["faculty_name"], partial=True),
             axis=1,
         )
     
@@ -1414,6 +1548,7 @@ elif instrument == "Oasis Reminder":
             "student_name",
             "student_email",
             "evaluation_type",
+            "evaluation_label",
             "expected_eval_count",
             "completed_eval_count",
             "pending_eval_count",
@@ -1428,30 +1563,35 @@ elif instrument == "Oasis Reminder":
     
         reminders = reminders[final_cols].copy()
     
-        # Power Automate cleanup.
         for col in reminders.columns:
             reminders[col] = reminders[col].apply(safe_for_power_automate)
     
         return reminders.reset_index(drop=True), collapsed.reset_index(drop=True)
     
     
-    # -----------------------------
+    # ============================================================
     # Streamlit UI
-    # -----------------------------
+    # ============================================================
     st.set_page_config(
         page_title="OASIS Preceptor Reminder Builder",
         page_icon="📋",
         layout="wide",
     )
     
-    st.title("📋 OASIS Preceptor Evaluation Reminder Builder")
+    st.title("📋 OASIS Preceptor Evaluation Reminder Builder — MULTI-FORM v2")
+    st.caption("VERSION: MULTI-FORM v2 — tracks Clinical Assessment of Student AND Observed H&P / PEDS History Taking & Physical Exam")
     st.write(
         "Upload the raw OASIS evaluation export and the raw evaluation associations/preceptor matching file. "
-        "The app will cross-reference expected evaluations against submitted evaluations and generate a "
+        "The app cross-references expected evaluations against submitted evaluations and generates a "
         "Power Automate-ready reminder CSV."
     )
     
+    EVAL_CONFIG_BY_KEY, LABEL_TO_KEY = config_maps(EVAL_CONFIGS)
+    DEFAULT_LABELS = [c.label for c in EVAL_CONFIGS]
+    
     with st.sidebar:
+        st.success("✅ MULTI-FORM v2 LOADED")
+        st.caption("You should see checkboxes/multiselect for CAS and Observed H&P below. If not, you are running an old file.")
         st.header("Files")
         assoc_file = st.file_uploader(
             "Raw preceptor matching / evaluation associations CSV",
@@ -1464,10 +1604,19 @@ elif instrument == "Oasis Reminder":
             key="oasis_file",
         )
     
-        st.header("Reminder settings")
-        eval_name = st.text_input("Evaluation to track", value=DEFAULT_EVAL)
-        selected_eval_key = clean_eval_name(eval_name)
+        st.header("Evaluation types to track")
+        selected_labels = st.multiselect(
+            "Select one or more evaluations",
+            options=DEFAULT_LABELS,
+            default=DEFAULT_LABELS,
+        )
     
+        with st.expander("Optional: add a custom evaluation type"):
+            custom_eval_name = st.text_input("Custom raw OASIS/association evaluation name", value="")
+            custom_output_name = st.text_input("Custom output name", value="")
+            custom_redcap_url = st.text_input("Custom REDCap survey base URL", value="")
+    
+        st.header("Date/settings")
         as_of_date = pd.to_datetime(
             st.date_input("As-of date", value=pd.Timestamp.today().date())
         ).normalize()
@@ -1486,17 +1635,32 @@ elif instrument == "Oasis Reminder":
         allow_email_fallback = st.checkbox("Allow evaluator email fallback", value=True)
         allow_username_fallback = st.checkbox("Allow evaluator username fallback", value=True)
     
-        st.header("Optional REDCap link")
-        redcap_base_url = st.text_input("REDCap survey base URL", value=DEFAULT_REDCAP_BASE)
+    # Build final config map including optional custom evaluation.
+    selected_eval_keys = {LABEL_TO_KEY[label] for label in selected_labels}
+    if custom_eval_name.strip():
+        custom_config = EvalConfig(
+            label=custom_output_name.strip() or custom_eval_name.strip(),
+            match_name=custom_eval_name.strip(),
+            output_name=custom_output_name.strip() or display_eval_name(custom_eval_name),
+            redcap_base_url=custom_redcap_url.strip(),
+            note_style="generic",
+        )
+        custom_key = clean_eval_name(custom_config.match_name)
+        EVAL_CONFIG_BY_KEY = {**EVAL_CONFIG_BY_KEY, custom_key: custom_config}
+        selected_eval_keys.add(custom_key)
     
     run_clicked = st.button("Build reminder CSV", type="primary")
     
     if not run_clicked:
-        st.info("Upload both CSV files, adjust the settings, then click **Build reminder CSV**.")
+        st.info("Upload both CSV files, confirm the evaluation types, then click **Build reminder CSV**.")
         st.stop()
     
     if assoc_file is None or oasis_file is None:
         st.error("Please upload both the raw association file and the raw OASIS evaluation export.")
+        st.stop()
+    
+    if not selected_eval_keys:
+        st.error("Please select at least one evaluation type to track.")
         st.stop()
     
     try:
@@ -1505,7 +1669,8 @@ elif instrument == "Oasis Reminder":
     
         expected = prepare_expected_associations(
             assoc_raw=assoc_raw,
-            selected_eval_key=selected_eval_key,
+            selected_eval_keys=selected_eval_keys,
+            eval_config_by_key=EVAL_CONFIG_BY_KEY,
             as_of_date=as_of_date,
             date_mode=date_mode,
             include_all_students=include_all_students,
@@ -1513,7 +1678,8 @@ elif instrument == "Oasis Reminder":
     
         completed = prepare_completed_oasis(
             oasis_raw=oasis_raw,
-            selected_eval_key=selected_eval_key,
+            selected_eval_keys=selected_eval_keys,
+            eval_config_by_key=EVAL_CONFIG_BY_KEY,
         )
     
         reminders, debug = build_reminder_report(
@@ -1521,42 +1687,77 @@ elif instrument == "Oasis Reminder":
             completed=completed,
             allow_email_fallback=allow_email_fallback,
             allow_username_fallback=allow_username_fallback,
-            redcap_base_url=redcap_base_url,
+            eval_config_by_key=EVAL_CONFIG_BY_KEY,
         )
     
-    except Exception as e:
+    except Exception as e:  # pragma: no cover - shown in Streamlit
         st.exception(e)
         st.stop()
     
-    # -----------------------------
+    # ============================================================
     # Results
-    # -----------------------------
+    # ============================================================
     st.success("Done.")
     
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Expected associations considered", len(expected))
-    m2.metric("Submitted evaluations found", len(completed))
-    m3.metric("Reminder rows", len(reminders))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Evaluation types tracked", len(selected_eval_keys))
+    m2.metric("Expected associations considered", len(expected))
+    m3.metric("Submitted evaluations found", len(completed))
+    m4.metric("Reminder rows", len(reminders))
     
-    tab1, tab2, tab3 = st.tabs(["Power Automate CSV", "Matched / debug view", "Raw normalized inputs"])
+    # Small counts by eval type.
+    if not expected.empty:
+        st.subheader("Counts by evaluation type")
+        expected_counts = expected.groupby(["evaluation_type"], dropna=False).size().reset_index(name="expected_rows")
+        completed_counts = completed.groupby(["evaluation_type"], dropna=False).size().reset_index(name="completed_rows")
+        reminder_counts = reminders.groupby(["evaluation_type"], dropna=False).size().reset_index(name="reminder_rows") if not reminders.empty else pd.DataFrame(columns=["evaluation_type", "reminder_rows"])
+        counts = expected_counts.merge(completed_counts, on="evaluation_type", how="outer").merge(reminder_counts, on="evaluation_type", how="outer").fillna(0)
+        for c in ["expected_rows", "completed_rows", "reminder_rows"]:
+            counts[c] = counts[c].astype(int)
+        st.dataframe(counts, use_container_width=True)
+    
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Combined Power Automate CSV",
+        "Separate downloads",
+        "Matched / debug view",
+        "Raw normalized inputs",
+    ])
     
     with tab1:
-        st.subheader("Power Automate-ready reminder file")
+        st.subheader("Combined Power Automate-ready reminder file")
         st.dataframe(reminders, use_container_width=True)
     
         csv_bytes = reminders.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
-            label="Download preceptor_eval_reminders.csv",
+            label="Download combined_preceptor_eval_reminders.csv",
             data=csv_bytes,
-            file_name="preceptor_eval_reminders.csv",
+            file_name="combined_preceptor_eval_reminders.csv",
             mime="text/csv",
         )
     
     with tab2:
+        st.subheader("Separate files by evaluation type")
+        if reminders.empty:
+            st.info("No reminders to split.")
+        else:
+            for eval_type in sorted(reminders["evaluation_type"].dropna().unique().tolist()):
+                sub = reminders[reminders["evaluation_type"].eq(eval_type)].copy()
+                safe_name = re.sub(r"[^a-z0-9]+", "_", eval_type.lower()).strip("_") or "evaluation"
+                st.write(f"**{eval_type}** — {len(sub)} reminder row(s)")
+                st.dataframe(sub, use_container_width=True)
+                st.download_button(
+                    label=f"Download {safe_name}_reminders.csv",
+                    data=sub.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"{safe_name}_reminders.csv",
+                    mime="text/csv",
+                    key=f"download_{safe_name}",
+                )
+    
+    with tab3:
         st.subheader("All expected rows after matching")
         st.write(
-            "Rows with `pending_eval_count = 0` were matched to a submitted OASIS evaluation. "
-            "This tab is the best place to troubleshoot cases like Kaelor/Madeline."
+            "Rows with `pending_eval_count = 0` matched a submitted OASIS evaluation. "
+            "This tab is the best place to troubleshoot specific cases like Kaelor/Madeline."
         )
         st.dataframe(debug, use_container_width=True)
     
@@ -1568,9 +1769,23 @@ elif instrument == "Oasis Reminder":
             mime="text/csv",
         )
     
-    with tab3:
+    with tab4:
         st.subheader("Normalized expected associations")
         st.dataframe(expected, use_container_width=True)
     
         st.subheader("Normalized completed OASIS submissions")
         st.dataframe(completed, use_container_width=True)
+    
+        st.download_button(
+            label="Download normalized_expected_associations.csv",
+            data=expected.to_csv(index=False).encode("utf-8-sig"),
+            file_name="normalized_expected_associations.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download normalized_completed_oasis.csv",
+            data=completed.to_csv(index=False).encode("utf-8-sig"),
+            file_name="normalized_completed_oasis.csv",
+            mime="text/csv",
+        )
+    
