@@ -1739,13 +1739,25 @@ elif instrument == "Oasis Reminder":
         return df.drop(columns=["_student_last_sort", "_faculty_last_sort"])
     
     with tab1:
-        st.subheader("Power Automate-ready reminder file")
+        st.subheader("Combined Power Automate-ready reminder file")
     
-        reminders_sorted = sort_by_student_and_faculty_last_name(reminders)
+        reminders_sorted = reminders.copy()
     
-        # Display-only debug copy. This does NOT affect the downloaded CSV columns.
+        reminders_sorted["_student_last_sort"] = (
+            reminders_sorted["student_name"].astype(str).str.strip().str.split().str[-1].str.lower()
+        )
+        reminders_sorted["_faculty_last_sort"] = (
+            reminders_sorted["faculty_name"].astype(str).str.strip().str.split().str[-1].str.lower()
+        )
+    
+        reminders_sorted = reminders_sorted.sort_values(
+            by=["_student_last_sort", "_faculty_last_sort", "student_name", "faculty_name"],
+            ascending=True,
+            kind="mergesort"
+        ).drop(columns=["_student_last_sort", "_faculty_last_sort"])
+    
+        # Screen-only preview with debug column
         reminders_preview = reminders_sorted.copy()
-    
         reminders_preview.insert(
             reminders_preview.columns.get_loc("faculty_name"),
             "student_last_name_debug",
@@ -1754,16 +1766,14 @@ elif instrument == "Oasis Reminder":
     
         st.dataframe(reminders_preview, use_container_width=True)
     
-        # Download is sorted, but does NOT include the debug column.
+        # Download uses sorted file WITHOUT debug column
         csv_bytes = reminders_sorted.to_csv(index=False).encode("utf-8-sig")
-    
         st.download_button(
-            label="Download preceptor_eval_reminders.csv",
+            label="Download combined_preceptor_eval_reminders.csv",
             data=csv_bytes,
-            file_name="preceptor_eval_reminders.csv",
+            file_name="combined_preceptor_eval_reminders.csv",
             mime="text/csv",
         )
-    
     
     with tab2:
         st.subheader("Separate files by evaluation type")
