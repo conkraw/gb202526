@@ -6,6 +6,8 @@ from docx import Document
 import pytz
 import pandas as pd
 import streamlit as st
+from __future__ import annotations
+from urllib.parse import quote_plus
 
 st.set_page_config(page_title="REDCap Formatter", layout="wide")
 st.title("🔄 REDCap Instruments Formatter")
@@ -956,16 +958,6 @@ elif instrument == "Roster_Updater":
         mime="text/csv"
     )
 elif instrument == "Oasis Reminder":
-    from __future__ import annotations
-    
-    import re
-    from io import BytesIO
-    from urllib.parse import quote_plus
-    
-    import pandas as pd
-    import streamlit as st
-    
-    
     # -----------------------------
     # Defaults
     # -----------------------------
