@@ -1574,4 +1574,3 @@ elif instrument == "Oasis Reminder":
     
         st.subheader("Normalized completed OASIS submissions")
         st.dataframe(completed, use_container_width=True)
-
