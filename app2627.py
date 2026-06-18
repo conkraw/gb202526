@@ -1721,16 +1721,21 @@ elif instrument == "Oasis Reminder":
     ])
     
     with tab1:
-        st.subheader("Combined Power Automate-ready reminder file")
-        st.dataframe(reminders, use_container_width=True)
+        st.subheader("Power Automate-ready reminder file")
     
-        csv_bytes = reminders.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            label="Download combined_preceptor_eval_reminders.csv",
-            data=csv_bytes,
-            file_name="combined_preceptor_eval_reminders.csv",
-            mime="text/csv",
+        # Display-only debug copy. This does NOT affect the downloaded CSV.
+        reminders_preview = reminders.copy()
+    
+        reminders_preview.insert(
+            reminders_preview.columns.get_loc("record_id") + 1,
+            "student_last_name_debug",
+            reminders_preview["student_name"].astype(str).str.split().str[-1]
         )
+    
+        st.dataframe(reminders_preview, use_container_width=True)
+    
+        # Download still uses the clean Power Automate file.
+        csv_bytes = reminders.to_csv(index=False).encode("utf-8-sig")
     
     with tab2:
         st.subheader("Separate files by evaluation type")
