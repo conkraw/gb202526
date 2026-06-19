@@ -1769,9 +1769,21 @@ elif instrument == "Oasis Reminder":
     
         # This shows the debug column
         st.dataframe(reminders_preview, use_container_width=True)
-    
-        # This downloads WITHOUT the debug column
-        csv_bytes = reminders_sorted.to_csv(index=False).encode("utf-8-sig")
+
+        csv_export = reminders_sorted[[
+        "faculty_email",
+        "faculty_name",
+        "student_name",
+        "evaluation_type",
+        "expected_eval_count",
+        "completed_eval_count",
+        "pending_eval_count",
+        "duplicate_match_flag",
+        "reminder_note",
+        "blank_form_link",
+        "partial_form_link"]].copy()
+        
+        csv_bytes = csv_export.to_csv(index=False).encode("utf-8-sig")
     
         st.download_button(
             label="Download combined_preceptor_eval_reminders.csv",
