@@ -1736,9 +1736,8 @@ elif instrument == "Oasis Reminder":
         return df.drop(columns=["_student_last_sort", "_faculty_last_sort"])
     
     with tab1:
-        st.subheader("Combined Power Automate-ready reminder file")
+        st.subheader("Power Automate-ready reminder files")
     
-        # Sort the real reminder data
         reminders_sorted = reminders.copy()
     
         reminders_sorted["_student_last_sort"] = (
@@ -1758,37 +1757,56 @@ elif instrument == "Oasis Reminder":
             .drop(columns=["_student_last_sort", "_faculty_last_sort"])
         )
     
-        # Preview-only copy with debug column
+        # Preview only
         reminders_preview = reminders_sorted.copy()
-    
         reminders_preview.insert(
             reminders_preview.columns.get_loc("faculty_name"),
             "student_last_name_debug",
             reminders_preview["student_name"].astype(str).str.split().str[-1]
         )
     
-        # This shows the debug column
         st.dataframe(reminders_preview, use_container_width=True)
-
-        csv_export = reminders_sorted[[
-        "faculty_email",
-        "faculty_name",
-        "student_name",
-        "evaluation_type",
-        "expected_eval_count",
-        "completed_eval_count",
-        "pending_eval_count",
-        "duplicate_match_flag",
-        "reminder_note",
-        "blank_form_link",
-        "partial_form_link"]].copy()
-        
-        csv_bytes = csv_export.to_csv(index=False).encode("utf-8-sig")
+    
+        # Clean Power Automate export columns only
+        pa_cols = [
+            "faculty_email",
+            "faculty_name",
+            "student_name",
+            "evaluation_type",
+            "expected_eval_count",
+            "completed_eval_count",
+            "pending_eval_count",
+            "duplicate_match_flag",
+            "reminder_note",
+            "blank_form_link",
+            "partial_form_link",
+        ]
+    
+        csv_base = reminders_sorted[pa_cols].copy()
+    
+        cas_export = csv_base[
+            csv_base["evaluation_type"]
+            .astype(str)
+            .str.contains("Clinical Assessment of Student", case=False, na=False)
+        ].copy()
+    
+        hp_export = csv_base[
+            csv_base["evaluation_type"]
+            .astype(str)
+            .str.contains("History Taking|Physical Exam|Observed H&P", case=False, na=False, regex=True)
+        ].copy()
     
         st.download_button(
-            label="Download combined_preceptor_eval_reminders.csv",
-            data=csv_bytes,
-            file_name="combined_preceptor_eval_reminders.csv",
+            label=f"Download preceptor_eval_reminders.csv ({len(cas_export)} rows)",
+            data=cas_export.to_csv(index=False).encode("utf-8-sig"),
+            file_name="preceptor_eval_reminders.csv",
+            mime="text/csv",
+        )
+    
+        st.download_button(
+            label=f"Download observed_hp_reminders.csv ({len(hp_export)} rows)",
+            data=hp_export.to_csv(index=False).encode("utf-8-sig"),
+            file_name="observed_hp_reminders.csv",
             mime="text/csv",
         )
     
