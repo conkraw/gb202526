@@ -1620,10 +1620,7 @@ elif instrument == "Oasis Reminder":
     
         date_mode = st.selectbox(
             "Which associations should be considered?",
-            [
-                "Active as of selected date",
-                "Evaluation period ended on/before selected date",
-                "No date filter",
+            ["No date filter","Active as of selected date","Evaluation period ended on/before selected date",
             ],
             index=0,
         )
