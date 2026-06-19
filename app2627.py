@@ -1575,8 +1575,8 @@ elif instrument == "Oasis Reminder":
         layout="wide",
     )
     
-    st.title("📋 OASIS Preceptor Evaluation Reminder Builder — MULTI-FORM v2")
-    st.caption("VERSION: MULTI-FORM v2 — tracks Clinical Assessment of Student AND Observed H&P / PEDS History Taking & Physical Exam")
+    st.title("📋 OASIS Preceptor Evaluation Reminder Builder")
+    st.caption("VERSION: v2 — tracks Clinical Assessment of Student AND Observed H&P / PEDS History Taking & Physical Exam")
     st.write(
         "Upload the raw OASIS evaluation export and the raw evaluation associations/preceptor matching file. "
         "The app cross-references expected evaluations against submitted evaluations and generates a "
@@ -1587,8 +1587,8 @@ elif instrument == "Oasis Reminder":
     DEFAULT_LABELS = [c.label for c in EVAL_CONFIGS]
     
     with st.sidebar:
-        st.success("✅ MULTI-FORM v2 LOADED")
-        st.caption("You should see checkboxes/multiselect for CAS and Observed H&P below. If not, you are running an old file.")
+        #st.success("✅ MULTI-FORM v2 LOADED")
+        #st.caption("You should see checkboxes/multiselect for CAS and Observed H&P below. If not, you are running an old file.")
         st.header("Files")
         assoc_file = st.file_uploader(
             "Raw preceptor matching / evaluation associations CSV",
