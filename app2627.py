@@ -4406,15 +4406,13 @@ elif instrument == "Session Feedback Summary Creator":
                 # QUESTION LABEL EDITOR
                 # =============================================
 
-                st.subheader(
-                    "Evaluation Questions"
-                )
+                #st.subheader("Evaluation Questions")
 
-                st.caption(
-                    "The REDCap variable names are detected "
-                    "automatically. Edit the question wording "
-                    "below whenever your survey changes."
-                )
+                #st.caption(
+                #    "The REDCap variable names are detected "
+                #    "automatically. Edit the question wording "
+                #    "below whenever your survey changes."
+                #)
 
 
                 if detected_questions:
