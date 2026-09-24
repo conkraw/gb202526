@@ -1864,5 +1864,229 @@ elif instrument == "Oasis Reminder":
             mime="text/csv",
         )
         
-elif instrument == "Session Feedback Link Creator": 
-    st.subheader("Normalized expected associations")
+elif instrument == "Session Feedback Link Creator":
+    st.header("📋 Session Feedback Link Creator")
+
+    import io
+    import urllib.parse
+    import qrcode
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.utils import ImageReader
+
+    # ---------------------------------------------------------
+    # REDCap base survey URL
+    # ---------------------------------------------------------
+    BASE_SURVEY_URL = "https://redcap.ctsi.psu.edu/surveys/?s=3HLWTMYWDF33479A"
+
+    # ---------------------------------------------------------
+    # Session Information
+    # ---------------------------------------------------------
+    st.subheader("Session Information")
+
+    presenter = st.text_input(
+        "Presenter",
+        value="Conrad Krawiec"
+    )
+
+    session_title = st.text_input(
+        "Session Title",
+        value="Residency Journal Club"
+    )
+
+    session_date = st.text_input(
+        "Session Date",
+        value="",
+        placeholder="Optional"
+    )
+
+    # ---------------------------------------------------------
+    # Build REDCap Link
+    # ---------------------------------------------------------
+    params = {}
+
+    if presenter.strip():
+        params["presenter"] = presenter.strip()
+
+    if session_title.strip():
+        params["title"] = session_title.strip()
+
+    if session_date.strip():
+        params["date"] = session_date.strip()
+
+    encoded_params = urllib.parse.urlencode(params)
+
+    feedback_url = BASE_SURVEY_URL
+
+    if encoded_params:
+        feedback_url += "&" + encoded_params
+
+    # ---------------------------------------------------------
+    # Create QR Code
+    # ---------------------------------------------------------
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+
+    qr.add_data(feedback_url)
+    qr.make(fit=True)
+
+    qr_image = qr.make_image(
+        fill_color="black",
+        back_color="white"
+    )
+
+    qr_buffer = io.BytesIO()
+    qr_image.save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+
+    # ---------------------------------------------------------
+    # Display Link + QR Code
+    # ---------------------------------------------------------
+    st.subheader("Student Feedback Link")
+
+    st.image(
+        qr_buffer.getvalue(),
+        width=300
+    )
+
+    st.markdown(
+        f"### [Open Session Feedback Survey]({feedback_url})"
+    )
+
+    st.caption(feedback_url)
+
+    # ---------------------------------------------------------
+    # Create PDF
+    # ---------------------------------------------------------
+    def create_feedback_pdf(
+        presenter,
+        session_title,
+        session_date,
+        feedback_url,
+        qr_bytes
+    ):
+        pdf_buffer = io.BytesIO()
+
+        c = canvas.Canvas(
+            pdf_buffer,
+            pagesize=letter
+        )
+
+        page_width, page_height = letter
+
+        # Title
+        c.setFont("Helvetica-Bold", 22)
+        c.drawCentredString(
+            page_width / 2,
+            page_height - 90,
+            "Session Feedback"
+        )
+
+        # Session title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(
+            page_width / 2,
+            page_height - 125,
+            session_title
+        )
+
+        # Presenter
+        c.setFont("Helvetica", 13)
+        c.drawCentredString(
+            page_width / 2,
+            page_height - 150,
+            presenter
+        )
+
+        # Date, if entered
+        if session_date.strip():
+            c.setFont("Helvetica", 12)
+            c.drawCentredString(
+                page_width / 2,
+                page_height - 172,
+                session_date
+            )
+
+        # Instructions
+        c.setFont("Helvetica", 13)
+        c.drawCentredString(
+            page_width / 2,
+            page_height - 215,
+            "Please scan the QR code to provide feedback."
+        )
+
+        # QR code
+        qr_stream = io.BytesIO(qr_bytes)
+        qr_reader = ImageReader(qr_stream)
+
+        qr_size = 250
+
+        c.drawImage(
+            qr_reader,
+            (page_width - qr_size) / 2,
+            page_height - 500,
+            width=qr_size,
+            height=qr_size,
+            preserveAspectRatio=True
+        )
+
+        # Clickable link
+        link_text = "Click here to open the feedback survey"
+
+        c.setFont("Helvetica-Bold", 12)
+
+        link_width = c.stringWidth(
+            link_text,
+            "Helvetica-Bold",
+            12
+        )
+
+        link_x = (page_width - link_width) / 2
+        link_y = page_height - 535
+
+        c.drawString(
+            link_x,
+            link_y,
+            link_text
+        )
+
+        # Make text clickable in PDF
+        c.linkURL(
+            feedback_url,
+            (
+                link_x,
+                link_y - 3,
+                link_x + link_width,
+                link_y + 12
+            ),
+            relative=0
+        )
+
+        c.save()
+
+        pdf_buffer.seek(0)
+        return pdf_buffer.getvalue()
+
+    pdf_bytes = create_feedback_pdf(
+        presenter,
+        session_title,
+        session_date,
+        feedback_url,
+        qr_buffer.getvalue()
+    )
+
+    # ---------------------------------------------------------
+    # Download PDF
+    # ---------------------------------------------------------
+    st.download_button(
+        "📄 Download Feedback QR PDF",
+        data=pdf_bytes,
+        file_name="session_feedback_qr.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
+
