@@ -19,7 +19,7 @@ st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.
 
 
 # choose which instrument you want to format
-instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater","Oasis Reminder"])
+instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater","Oasis Reminder","Session Feedback Link Creator"])
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
@@ -1863,4 +1863,5 @@ elif instrument == "Oasis Reminder":
             file_name="normalized_completed_oasis.csv",
             mime="text/csv",
         )
-    
+    elif instrument == "Session Feedback Link Creator": 
+        st.subheader("Normalized expected associations")
