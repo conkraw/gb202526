@@ -2811,7 +2811,7 @@ elif instrument == "Session Feedback Link Creator":
 
                             st.rerun()
 
-elif instrument == "Session Feedback Summary":
+elif instrument == "Session Feedback Summary Creator":
     st.header("📋 Session Feedback Summary Creator")
 
     import io
