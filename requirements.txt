@@ -6,3 +6,7 @@ XlsxWriter
 numpy
 datetime
 openpyxl
+qrcode
+canvas
+letter
+ImageReader
