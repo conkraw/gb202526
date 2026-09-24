@@ -4440,14 +4440,22 @@ elif instrument == "Session Feedback Summary Creator":
                     )
 
 
-                    edited_question_config = st.data_editor(question_config,hide_index=True,use_container_width=True,disabled=["REDCap Field"],key=("feedback_summary_", "question_editor"))
+                    edited_question_config = st.data_editor(
+                        question_config,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "REDCap Field": None
+                        },
+                        key="feedback_summary_question_editor"
+                    )
 
 
                     included_question_rows = (
                         edited_question_config[
                             edited_question_config[
                                 "Include"
-                            ] == False
+                            ] == True
                         ]
                     )
 
@@ -4516,19 +4524,15 @@ elif instrument == "Session Feedback Summary Creator":
                     )
 
 
-                    edited_comment_config = st.data_editor(
-                        comment_config,
-                        hide_index=True,
-                        use_container_width=True,
-                        disabled=[
-                            "REDCap Field"
-                        ],
-                        key=(
-                            "feedback_summary_"
-                            "comment_editor"
-                        )
-                    )
-
+                edited_comment_config = st.data_editor(
+                    comment_config,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "REDCap Field": None
+                    },
+                    key="feedback_summary_comment_editor"
+                )
 
                     included_comment_rows = (
                         edited_comment_config[
