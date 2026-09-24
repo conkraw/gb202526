@@ -1884,7 +1884,7 @@ elif instrument == "Oasis Reminder":
             file_name="normalized_completed_oasis.csv",
             mime="text/csv",
         )
-        
+    
 elif instrument == "Session Feedback Link Creator":
     st.header("📋 Session Feedback Link Creator")
 
@@ -1909,7 +1909,24 @@ elif instrument == "Session Feedback Link Creator":
         "?s=3HLWTMYWDF33479A"
     )
 
-    GITHUB_DATA_FILE = "data/session_feedback_options.json"
+    GITHUB_DATA_FILE = (
+        "data/session_feedback_options.json"
+    )
+
+    OTHER_OPTION = "➕ Other / enter manually"
+
+
+    # =========================================================
+    # DEFAULT SAVED DATA
+    # =========================================================
+    #
+    # NEW FORMAT:
+    #
+    # Presenter
+    #   -> username
+    #   -> list of session titles
+    #
+    # =========================================================
 
     DEFAULT_SESSIONS = {
         "Conrad Krawiec": {
@@ -1920,21 +1937,33 @@ elif instrument == "Session Feedback Link Creator":
         }
     }
 
-    OTHER_OPTION = "➕ Other / enter manually"
-
 
     # =========================================================
     # GITHUB SETTINGS
     # =========================================================
 
     try:
-        GITHUB_TOKEN = st.secrets["github"]["token"]
-        GITHUB_REPO = st.secrets["github"]["repo"]
-        GITHUB_BRANCH = st.secrets["github"].get("branch", "main")
+
+        GITHUB_TOKEN = (
+            st.secrets["github"]["token"]
+        )
+
+        GITHUB_REPO = (
+            st.secrets["github"]["repo"]
+        )
+
+        GITHUB_BRANCH = (
+            st.secrets["github"].get(
+                "branch",
+                "main"
+            )
+        )
 
         github_configured = True
 
+
     except Exception:
+
         GITHUB_TOKEN = ""
         GITHUB_REPO = ""
         GITHUB_BRANCH = "main"
@@ -1943,90 +1972,312 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
+    # NORMALIZE SAVED SESSION DATA
+    # =========================================================
+    #
+    # This allows your OLD GitHub file to continue working.
+    #
+    # OLD:
+    #
+    # "Conrad Krawiec": [
+    #     "Residency Journal Club"
+    # ]
+    #
+    # NEW:
+    #
+    # "Conrad Krawiec": {
+    #     "username": "czk11",
+    #     "sessions": [
+    #         "Residency Journal Club"
+    #     ]
+    # }
+    #
+    # =========================================================
+
+    def normalize_saved_sessions(data):
+
+        cleaned_sessions = {}
+
+        if not isinstance(
+            data,
+            dict
+        ):
+
+            return cleaned_sessions
+
+
+        for person, info in data.items():
+
+            person = str(
+                person
+            ).strip()
+
+
+            if not person:
+                continue
+
+
+            # -------------------------------------------------
+            # OLD FORMAT
+            # -------------------------------------------------
+
+            if isinstance(
+                info,
+                list
+            ):
+
+                cleaned_sessions[
+                    person
+                ] = {
+
+                    "username": "",
+
+                    "sessions": sorted(
+                        {
+                            str(title).strip()
+                            for title in info
+                            if str(title).strip()
+                        }
+                    )
+                }
+
+
+            # -------------------------------------------------
+            # NEW FORMAT
+            # -------------------------------------------------
+
+            elif isinstance(
+                info,
+                dict
+            ):
+
+                username_value = str(
+                    info.get(
+                        "username",
+                        ""
+                    )
+                ).strip()
+
+
+                titles = info.get(
+                    "sessions",
+                    []
+                )
+
+
+                if not isinstance(
+                    titles,
+                    list
+                ):
+
+                    titles = [
+                        titles
+                    ]
+
+
+                cleaned_titles = sorted(
+                    {
+                        str(title).strip()
+                        for title in titles
+                        if str(title).strip()
+                    }
+                )
+
+
+                cleaned_sessions[
+                    person
+                ] = {
+
+                    "username":
+                        username_value,
+
+                    "sessions":
+                        cleaned_titles
+                }
+
+
+        return cleaned_sessions
+
+
+    # =========================================================
     # GITHUB HELPER FUNCTIONS
     # =========================================================
 
     def github_headers():
+
         return {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+
+            "Authorization":
+                f"Bearer {GITHUB_TOKEN}",
+
+            "Accept":
+                "application/vnd.github+json",
+
+            "X-GitHub-Api-Version":
+                "2022-11-28",
         }
 
 
-    def github_file_url(file_path):
+    def github_file_url(
+        file_path
+    ):
+
         encoded_path = urllib.parse.quote(
             file_path,
             safe="/"
         )
 
+
         return (
             f"https://api.github.com/repos/"
-            f"{GITHUB_REPO}/contents/{encoded_path}"
+            f"{GITHUB_REPO}/contents/"
+            f"{encoded_path}"
         )
 
 
-    def load_saved_sessions():
-        """
-        Load presenter/session data from GitHub.
+    # =========================================================
+    # LOAD SAVED PRESENTERS / SESSIONS
+    # =========================================================
 
-        If the file does not exist yet, create it using
-        DEFAULT_SESSIONS.
-        """
+    def load_saved_sessions():
+
+        # -----------------------------------------------------
+        # No GitHub connection
+        # -----------------------------------------------------
 
         if not github_configured:
-            return DEFAULT_SESSIONS.copy()
 
-        url = github_file_url(GITHUB_DATA_FILE)
+            return normalize_saved_sessions(
+                DEFAULT_SESSIONS
+            )
+
+
+        url = github_file_url(
+            GITHUB_DATA_FILE
+        )
+
 
         try:
+
             response = requests.get(
                 url,
                 headers=github_headers(),
-                params={"ref": GITHUB_BRANCH},
+                params={
+                    "ref": GITHUB_BRANCH
+                },
                 timeout=15,
             )
 
-            # File exists
+
+            # =================================================
+            # FILE EXISTS
+            # =================================================
+
             if response.status_code == 200:
 
-                file_info = response.json()
-
-                encoded_content = file_info.get(
-                    "content",
-                    ""
+                file_info = (
+                    response.json()
                 )
 
-                decoded_content = base64.b64decode(
-                    encoded_content
-                ).decode("utf-8")
 
-                data = json.loads(decoded_content)
+                encoded_content = (
+                    file_info.get(
+                        "content",
+                        ""
+                    )
+                )
 
-                if isinstance(data, dict):
-                    return data
 
-                return DEFAULT_SESSIONS.copy()
+                decoded_content = (
+                    base64.b64decode(
+                        encoded_content
+                    )
+                    .decode(
+                        "utf-8"
+                    )
+                    .strip()
+                )
 
-            # File does not exist yet
+
+                # Empty GitHub file
+                if not decoded_content:
+
+                    return (
+                        normalize_saved_sessions(
+                            DEFAULT_SESSIONS
+                        )
+                    )
+
+
+                try:
+
+                    data = json.loads(
+                        decoded_content
+                    )
+
+
+                except json.JSONDecodeError:
+
+                    st.warning(
+                        "The saved presenter file "
+                        "contains invalid JSON. "
+                        "Using default values."
+                    )
+
+                    return (
+                        normalize_saved_sessions(
+                            DEFAULT_SESSIONS
+                        )
+                    )
+
+
+                return (
+                    normalize_saved_sessions(
+                        data
+                    )
+                )
+
+
+            # =================================================
+            # FILE DOES NOT EXIST
+            # =================================================
+
             elif response.status_code == 404:
 
-                save_saved_sessions(
+                success = save_saved_sessions(
                     DEFAULT_SESSIONS,
                     commit_message=(
                         "Create session feedback options"
                     )
                 )
 
-                return DEFAULT_SESSIONS.copy()
 
-            else:
-                st.warning(
-                    "Could not load saved presenters from "
-                    f"GitHub. HTTP {response.status_code}"
+                return (
+                    normalize_saved_sessions(
+                        DEFAULT_SESSIONS
+                    )
                 )
 
-                return DEFAULT_SESSIONS.copy()
+
+            # =================================================
+            # OTHER GITHUB ERROR
+            # =================================================
+
+            else:
+
+                st.warning(
+                    "Could not load saved presenters "
+                    "from GitHub. "
+                    f"HTTP {response.status_code}"
+                )
+
+
+                return (
+                    normalize_saved_sessions(
+                        DEFAULT_SESSIONS
+                    )
+                )
+
 
         except Exception as e:
 
@@ -2035,74 +2286,149 @@ elif instrument == "Session Feedback Link Creator":
                 f"Using defaults instead. {e}"
             )
 
-            return DEFAULT_SESSIONS.copy()
 
+            return (
+                normalize_saved_sessions(
+                    DEFAULT_SESSIONS
+                )
+            )
+
+
+    # =========================================================
+    # SAVE SAVED PRESENTERS / SESSIONS
+    # =========================================================
 
     def save_saved_sessions(
         data,
-        commit_message="Update session feedback options"
+        commit_message=(
+            "Update session feedback options"
+        )
     ):
-        """
-        Create or update the JSON file in GitHub.
-        """
 
         if not github_configured:
+
             st.error(
                 "GitHub persistence is not configured. "
-                "Add the GitHub settings to Streamlit Secrets."
+                "Add the GitHub settings to "
+                "Streamlit Secrets."
             )
+
             return False
 
-        url = github_file_url(GITHUB_DATA_FILE)
+
+        # -----------------------------------------------------
+        # Always save using NEW format
+        # -----------------------------------------------------
+
+        data = normalize_saved_sessions(
+            data
+        )
+
+
+        url = github_file_url(
+            GITHUB_DATA_FILE
+        )
 
         sha = None
 
+
         try:
-            # ---------------------------------------------
-            # See if file already exists
-            # ---------------------------------------------
+
+            # =================================================
+            # CHECK IF FILE ALREADY EXISTS
+            # =================================================
+
             current_response = requests.get(
                 url,
                 headers=github_headers(),
-                params={"ref": GITHUB_BRANCH},
+                params={
+                    "ref": GITHUB_BRANCH
+                },
                 timeout=15,
             )
 
-            if current_response.status_code == 200:
-                sha = current_response.json().get("sha")
 
-            elif current_response.status_code != 404:
-                st.error(
-                    "Could not check the existing GitHub file. "
-                    f"HTTP {current_response.status_code}"
+            if (
+                current_response.status_code
+                == 200
+            ):
+
+                sha = (
+                    current_response
+                    .json()
+                    .get(
+                        "sha"
+                    )
                 )
+
+
+            elif (
+                current_response.status_code
+                != 404
+            ):
+
+                st.error(
+                    "Could not check the existing "
+                    "GitHub file. "
+                    f"HTTP "
+                    f"{current_response.status_code}"
+                )
+
                 return False
 
-            # ---------------------------------------------
-            # Convert data to JSON
-            # ---------------------------------------------
+
+            # =================================================
+            # CONVERT TO JSON
+            # =================================================
+
             json_text = json.dumps(
                 data,
                 indent=2,
                 ensure_ascii=False
             )
 
-            encoded_content = base64.b64encode(
-                json_text.encode("utf-8")
-            ).decode("utf-8")
 
-            # ---------------------------------------------
-            # GitHub PUT payload
-            # ---------------------------------------------
+            encoded_content = (
+                base64.b64encode(
+                    json_text.encode(
+                        "utf-8"
+                    )
+                )
+                .decode(
+                    "utf-8"
+                )
+            )
+
+
+            # =================================================
+            # GITHUB PAYLOAD
+            # =================================================
+
             payload = {
-                "message": commit_message,
-                "content": encoded_content,
-                "branch": GITHUB_BRANCH,
+
+                "message":
+                    commit_message,
+
+                "content":
+                    encoded_content,
+
+                "branch":
+                    GITHUB_BRANCH,
             }
 
-            # Required when updating an existing file
+
+            # Required when updating
+            # an existing GitHub file
             if sha:
-                payload["sha"] = sha
+
+                payload[
+                    "sha"
+                ] = sha
+
+
+            # =================================================
+            # SAVE TO GITHUB
+            # =================================================
 
             response = requests.put(
                 url,
@@ -2111,8 +2437,14 @@ elif instrument == "Session Feedback Link Creator":
                 timeout=15,
             )
 
-            if response.status_code in (200, 201):
+
+            if response.status_code in (
+                200,
+                201
+            ):
+
                 return True
+
 
             st.error(
                 "GitHub could not save the changes. "
@@ -2120,7 +2452,9 @@ elif instrument == "Session Feedback Link Creator":
                 f"{response.text}"
             )
 
+
             return False
+
 
         except Exception as e:
 
@@ -2130,205 +2464,284 @@ elif instrument == "Session Feedback Link Creator":
 
             return False
 
+
     # =========================================================
-    # LOAD SAVED PRESENTERS / SESSIONS
+    # LOAD SAVED DATA
     # =========================================================
-    
-    # First load the data from GitHub
-    saved_sessions = load_saved_sessions()
-    
+    #
+    # IMPORTANT:
+    # This must come AFTER all helper functions above.
     # =========================================================
-    # CLEAN / NORMALIZE SAVED DATA
-    # =========================================================
-    
-    cleaned_sessions = {}
-    
-    for person, info in saved_sessions.items():
-    
-        person = str(person).strip()
-    
-        if not person:
-            continue
-    
-        # -----------------------------------------------------
-        # OLD FORMAT:
-        # "Conrad Krawiec": ["Residency Journal Club"]
-        #
-        # Convert automatically to new format.
-        # -----------------------------------------------------
-    
-        if isinstance(info, list):
-    
-            cleaned_sessions[person] = {
-                "username": "",
-                "sessions": sorted(
-                    {
-                        str(title).strip()
-                        for title in info
-                        if str(title).strip()
-                    }
-                )
-            }
-    
-        # -----------------------------------------------------
-        # NEW FORMAT
-        # -----------------------------------------------------
-    
-        elif isinstance(info, dict):
-    
-            username_value = str(
-                info.get(
-                    "username",
-                    ""
-                )
-            ).strip()
-    
-            titles = info.get(
-                "sessions",
-                []
-            )
-    
-            if not isinstance(
-                titles,
-                list
-            ):
-                titles = [
-                    titles
-                ]
-    
-            cleaned_titles = sorted(
-                {
-                    str(title).strip()
-                    for title in titles
-                    if str(title).strip()
-                }
-            )
-    
-            cleaned_sessions[
-                person
-            ] = {
-                "username":
-                    username_value,
-    
-                "sessions":
-                    cleaned_titles
-            }
-    
-    
-    saved_sessions = cleaned_sessions
+
+    saved_sessions = (
+        load_saved_sessions()
+    )
 
 
     # =========================================================
     # SESSION INFORMATION
     # =========================================================
 
-    st.subheader("Session Information")
+    st.subheader(
+        "Session Information"
+    )
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # PRESENTER
-    # ---------------------------------------------------------
-    
+    # =========================================================
+
+    presenter_options = (
+
+        sorted(
+            saved_sessions.keys()
+        )
+
+        + [
+            OTHER_OPTION
+        ]
+    )
+
+
+    selected_presenter = st.selectbox(
+        "Presenter",
+        options=presenter_options,
+        index=None,
+        placeholder="Select presenter...",
+        key="feedback_presenter_select"
+    )
+
+
     presenter = ""
     username = ""
-    manual_presenter = False
-    
-    
-    if selected_presenter == OTHER_OPTION:
-    
-        manual_presenter = True
-    
-        presenter = st.text_input(
-            "Presenter name",
-            value="",
-            placeholder="Enter presenter name",
-            key="manual_feedback_presenter"
-        )
-    
-        username = st.text_input(
-            "Username",
-            value="",
-            placeholder="Enter presenter username",
-            key="manual_feedback_username"
-        )
-    
-    
-    elif selected_presenter:
-    
-        presenter = selected_presenter
-    
-        username = saved_sessions.get(
-            presenter,
-            {}
-        ).get(
-            "username",
-            ""
-        )
-    
-        st.text_input(
-            "Username",
-            value=username,
-            disabled=True,
-            key=f"feedback_username_{presenter}"
-        )
-
-    # ---------------------------------------------------------
-    # USERNAME
-    # ---------------------------------------------------------
-    
-    username = st.text_input(
-        "Username",
-        value="",
-        placeholder="Enter presenter username"
-    )
-    # ---------------------------------------------------------
-    # SESSION TITLE
-    # ---------------------------------------------------------
-
     session_title = ""
+
+    manual_presenter = False
+    manual_username = False
     manual_title = False
 
 
+    # =========================================================
+    # NEW / MANUAL PRESENTER
+    # =========================================================
+
+    if (
+        selected_presenter
+        == OTHER_OPTION
+    ):
+
+        manual_presenter = True
+        manual_username = True
+
+
+        presenter = st.text_input(
+            "Presenter name",
+            value="",
+            placeholder=(
+                "Enter presenter name"
+            ),
+            key=(
+                "manual_feedback_presenter"
+            )
+        )
+
+
+        username = st.text_input(
+            "Username",
+            value="",
+            placeholder=(
+                "Enter presenter username"
+            ),
+            key=(
+                "manual_feedback_username"
+            )
+        )
+
+
+    # =========================================================
+    # EXISTING PRESENTER
+    # =========================================================
+
+    elif selected_presenter:
+
+        presenter = (
+            selected_presenter
+        )
+
+
+        presenter_info = (
+            saved_sessions.get(
+                presenter,
+                {
+                    "username": "",
+                    "sessions": []
+                }
+            )
+        )
+
+
+        stored_username = str(
+            presenter_info.get(
+                "username",
+                ""
+            )
+        ).strip()
+
+
+        # -----------------------------------------------------
+        # USERNAME ALREADY SAVED
+        # -----------------------------------------------------
+
+        if stored_username:
+
+            username = stored_username
+
+
+            st.text_input(
+                "Username",
+                value=username,
+                disabled=True,
+                key=(
+                    "feedback_existing_username_"
+                    + presenter
+                )
+            )
+
+
+        # -----------------------------------------------------
+        # OLD PRESENTER WITHOUT USERNAME
+        #
+        # Enter username once.
+        # Save below.
+        # -----------------------------------------------------
+
+        else:
+
+            manual_username = True
+
+
+            username = st.text_input(
+                "Username",
+                value="",
+                placeholder=(
+                    "Enter presenter username"
+                ),
+                key=(
+                    "feedback_missing_username_"
+                    + presenter
+                )
+            )
+
+
+    # =========================================================
+    # SESSION TITLE
+    # =========================================================
+
     if presenter:
 
-        # Existing presenter
+        # -----------------------------------------------------
+        # EXISTING PRESENTER
+        # -----------------------------------------------------
+
         if presenter in saved_sessions:
 
-            title_options = (sorted(saved_sessions[presenter].get("sessions",[])) + [OTHER_OPTION])
+            presenter_sessions = (
+                saved_sessions[
+                    presenter
+                ].get(
+                    "sessions",
+                    []
+                )
+            )
+
+
+            title_options = (
+
+                sorted(
+                    presenter_sessions
+                )
+
+                + [
+                    OTHER_OPTION
+                ]
+            )
+
 
             selected_title = st.selectbox(
                 "Session Title",
                 options=title_options,
                 index=None,
-                placeholder="Select session title..."
+                placeholder=(
+                    "Select session title..."
+                ),
+                key=(
+                    "feedback_session_title_"
+                    + presenter
+                )
             )
 
-            if selected_title == OTHER_OPTION:
+
+            # -------------------------------------------------
+            # MANUAL NEW TITLE
+            # -------------------------------------------------
+
+            if (
+                selected_title
+                == OTHER_OPTION
+            ):
 
                 manual_title = True
 
-                session_title = st.text_input(
-                    "Session title",
-                    value="",
-                    placeholder="Enter session title",
-                    key="manual_feedback_title"
+
+                session_title = (
+                    st.text_input(
+                        "Session title",
+                        value="",
+                        placeholder=(
+                            "Enter session title"
+                        ),
+                        key=(
+                            "manual_feedback_title_"
+                            + presenter
+                        )
+                    )
                 )
+
 
             elif selected_title:
 
-                session_title = selected_title
+                session_title = (
+                    selected_title
+                )
 
-        # Completely new presenter
+
+        # -----------------------------------------------------
+        # BRAND NEW PRESENTER
+        # -----------------------------------------------------
+
         else:
 
             manual_title = True
 
-            session_title = st.text_input(
-                "Session Title",
-                value="",
-                placeholder="Enter session title",
-                key="new_presenter_session_title"
+
+            session_title = (
+                st.text_input(
+                    "Session Title",
+                    value="",
+                    placeholder=(
+                        "Enter session title"
+                    ),
+                    key=(
+                        "new_presenter_"
+                        "session_title"
+                    )
+                )
             )
+
+
+    # =========================================================
+    # NO PRESENTER SELECTED
+    # =========================================================
 
     else:
 
@@ -2336,175 +2749,268 @@ elif instrument == "Session Feedback Link Creator":
             "Session Title",
             options=[],
             index=None,
-            placeholder="Select a presenter first...",
-            disabled=True
+            placeholder=(
+                "Select a presenter first..."
+            ),
+            disabled=True,
+            key=(
+                "disabled_feedback_"
+                "session_title"
+            )
         )
 
 
-    # ---------------------------------------------------------
+    # =========================================================
     # DATE
-    # ---------------------------------------------------------
+    # =========================================================
 
     session_date = st.date_input(
         "Session Date",
         value=None,
-        format="MM/DD/YYYY"
+        format="MM/DD/YYYY",
+        key="feedback_session_date"
     )
-    
-    # REDCap requires M-D-Y with hyphens
+
+
+    # ---------------------------------------------------------
+    # REDCap prefill format:
+    # YYYY-MM-DD
+    # ---------------------------------------------------------
+
     date_for_redcap = (
-        session_date.strftime("%Y-%m-%d")
+
+        session_date.strftime(
+            "%Y-%m-%d"
+        )
+
         if session_date
+
         else ""
     )
-        
-    # Friendly date for the PDF
+
+
+    # ---------------------------------------------------------
+    # Friendly date for PDF
+    # ---------------------------------------------------------
+
     session_date_display = (
-        session_date.strftime("%m/%d/%Y")
+
+        session_date.strftime(
+            "%m/%d/%Y"
+        )
+
         if session_date
+
         else ""
     )
 
 
     # =========================================================
-    # SAVE NEW PRESENTER / TITLE
+    # SAVE NEW PRESENTER / USERNAME / SESSION
     # =========================================================
+
     if (
         username.strip()
         and presenter.strip()
         and session_title.strip()
-        and (manual_presenter or manual_title)
+        and (
+            manual_presenter
+            or manual_username
+            or manual_title
+        )
     ):
-    
+
         if st.button(
             "💾 Save Presenter / Session for Future Use",
             use_container_width=True,
-            key="save_feedback_presenter_session"
+            key=(
+                "save_feedback_"
+                "presenter_session"
+            )
         ):
-    
-            presenter_clean = presenter.strip()
-            username_clean = username.strip()
-            title_clean = session_title.strip()
-    
-            latest_sessions = load_saved_sessions()
-    
-    
+
+            presenter_clean = (
+                presenter.strip()
+            )
+
+            username_clean = (
+                username.strip()
+            )
+
+            title_clean = (
+                session_title.strip()
+            )
+
+
             # -------------------------------------------------
-            # Normalize old-format presenter if necessary
+            # Reload latest GitHub version
             # -------------------------------------------------
-    
-            if presenter_clean in latest_sessions:
-    
-                if isinstance(
-                    latest_sessions[
-                        presenter_clean
-                    ],
-                    list
-                ):
-    
-                    latest_sessions[
-                        presenter_clean
-                    ] = {
-                        "username":
-                            username_clean,
-    
-                        "sessions":
-                            latest_sessions[
-                                presenter_clean
-                            ]
-                    }
-    
-            else:
-    
+
+            latest_sessions = (
+                load_saved_sessions()
+            )
+
+
+            # -------------------------------------------------
+            # Create presenter if needed
+            # -------------------------------------------------
+
+            if (
+                presenter_clean
+                not in latest_sessions
+            ):
+
                 latest_sessions[
                     presenter_clean
                 ] = {
+
                     "username":
                         username_clean,
-    
+
                     "sessions":
                         []
                 }
-    
-    
+
+
             # -------------------------------------------------
-            # Save/update username
+            # Ensure presenter entry is valid
             # -------------------------------------------------
-    
-            latest_sessions[
-                presenter_clean
-            ][
-                "username"
-            ] = username_clean
-    
-    
-            # -------------------------------------------------
-            # Save session title
-            # -------------------------------------------------
-    
-            existing_titles = (
+
+            presenter_entry = (
                 latest_sessions[
                     presenter_clean
                 ]
-                .get(
+            )
+
+
+            if not isinstance(
+                presenter_entry,
+                dict
+            ):
+
+                presenter_entry = {
+
+                    "username":
+                        username_clean,
+
+                    "sessions":
+                        []
+                }
+
+
+            # -------------------------------------------------
+            # SAVE / UPDATE USERNAME
+            # -------------------------------------------------
+
+            presenter_entry[
+                "username"
+            ] = username_clean
+
+
+            # -------------------------------------------------
+            # SAVE SESSION TITLE
+            # -------------------------------------------------
+
+            existing_titles = (
+                presenter_entry.get(
                     "sessions",
                     []
                 )
             )
-    
-    
-            if title_clean not in existing_titles:
-    
+
+
+            if not isinstance(
+                existing_titles,
+                list
+            ):
+
+                existing_titles = []
+
+
+            if (
+                title_clean
+                not in existing_titles
+            ):
+
                 existing_titles.append(
                     title_clean
                 )
-    
-    
-            latest_sessions[
-                presenter_clean
-            ][
+
+
+            presenter_entry[
                 "sessions"
             ] = sorted(
                 set(
                     existing_titles
                 )
             )
-    
-    
+
+
+            latest_sessions[
+                presenter_clean
+            ] = presenter_entry
+
+
+            # -------------------------------------------------
+            # SAVE TO GITHUB
+            # -------------------------------------------------
+
             success = save_saved_sessions(
                 latest_sessions,
                 commit_message=(
-                    f"Add session feedback option: "
-                    f"{presenter_clean} - {title_clean}"
+                    "Update session feedback option: "
+                    f"{presenter_clean} - "
+                    f"{title_clean}"
                 )
             )
-    
-    
+
+
             if success:
-    
+
                 st.success(
                     f"Saved {presenter_clean} — "
                     f"{title_clean}"
                 )
-    
+
                 st.rerun()
+
 
     # =========================================================
     # CREATE FEEDBACK LINK
     # =========================================================
 
-    if (username.strip() and presenter.strip() and session_title.strip()):
+    if (
+        username.strip()
+        and presenter.strip()
+        and session_title.strip()
+    ):
 
         params = {
-            "username": username.strip(),
-            "presenter": presenter.strip(),
-            "title": session_title.strip(),
+
+            "username":
+                username.strip(),
+
+            "presenter":
+                presenter.strip(),
+
+            "title":
+                session_title.strip(),
         }
 
-        if date_for_redcap:
-            params["date"] = date_for_redcap
 
-        encoded_params = urllib.parse.urlencode(params)
+        if date_for_redcap:
+
+            params[
+                "date"
+            ] = date_for_redcap
+
+
+        encoded_params = (
+            urllib.parse.urlencode(
+                params
+            )
+        )
+
 
         feedback_url = (
             BASE_SURVEY_URL
@@ -2518,32 +3024,52 @@ elif instrument == "Session Feedback Link Creator":
         # =====================================================
 
         qr = qrcode.QRCode(
+
             version=None,
+
             error_correction=(
-                qrcode.constants.ERROR_CORRECT_M
+                qrcode.constants
+                .ERROR_CORRECT_M
             ),
+
             box_size=10,
+
             border=4,
         )
 
-        qr.add_data(feedback_url)
-        qr.make(fit=True)
+
+        qr.add_data(
+            feedback_url
+        )
+
+        qr.make(
+            fit=True
+        )
+
 
         qr_image = qr.make_image(
             fill_color="black",
             back_color="white"
         )
 
+
         qr_buffer = io.BytesIO()
+
 
         qr_image.save(
             qr_buffer,
             format="PNG"
         )
 
-        qr_buffer.seek(0)
 
-        qr_bytes = qr_buffer.getvalue()
+        qr_buffer.seek(
+            0
+        )
+
+
+        qr_bytes = (
+            qr_buffer.getvalue()
+        )
 
 
         # =====================================================
@@ -2552,12 +3078,16 @@ elif instrument == "Session Feedback Link Creator":
 
         st.divider()
 
-        st.subheader("Student Feedback Link")
+        st.subheader(
+            "Student Feedback Link"
+        )
+
 
         st.image(
             qr_bytes,
             width=300
         )
+
 
         st.markdown(
             f"### [Open Session Feedback Survey]"
@@ -2579,20 +3109,27 @@ elif instrument == "Session Feedback Link Creator":
 
             pdf_buffer = io.BytesIO()
 
+
             c = canvas.Canvas(
                 pdf_buffer,
                 pagesize=letter
             )
 
-            page_width, page_height = letter
+
+            page_width, page_height = (
+                letter
+            )
+
 
             # ---------------------------------------------
-            # Title
+            # TITLE
             # ---------------------------------------------
+
             c.setFont(
                 "Helvetica-Bold",
                 22
             )
+
 
             c.drawCentredString(
                 page_width / 2,
@@ -2602,12 +3139,14 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # ---------------------------------------------
-            # Session title
+            # SESSION TITLE
             # ---------------------------------------------
+
             c.setFont(
                 "Helvetica-Bold",
                 16
             )
+
 
             c.drawCentredString(
                 page_width / 2,
@@ -2617,12 +3156,14 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # ---------------------------------------------
-            # Presenter
+            # PRESENTER
             # ---------------------------------------------
+
             c.setFont(
                 "Helvetica",
                 13
             )
+
 
             c.drawCentredString(
                 page_width / 2,
@@ -2632,14 +3173,16 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # ---------------------------------------------
-            # Date
+            # DATE
             # ---------------------------------------------
+
             if session_date.strip():
 
                 c.setFont(
                     "Helvetica",
                     12
                 )
+
 
                 c.drawCentredString(
                     page_width / 2,
@@ -2649,34 +3192,48 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # ---------------------------------------------
-            # Instructions
+            # INSTRUCTIONS
             # ---------------------------------------------
+
             c.setFont(
                 "Helvetica",
                 13
             )
 
+
             c.drawCentredString(
                 page_width / 2,
                 page_height - 215,
-                "Please scan the QR code to provide feedback."
+                (
+                    "Please scan the QR code "
+                    "to provide feedback."
+                )
             )
 
 
             # ---------------------------------------------
-            # QR code
+            # QR CODE
             # ---------------------------------------------
-            qr_stream = io.BytesIO(qr_bytes)
+
+            qr_stream = io.BytesIO(
+                qr_bytes
+            )
+
 
             qr_reader = ImageReader(
                 qr_stream
             )
 
+
             qr_size = 250
+
 
             c.drawImage(
                 qr_reader,
-                (page_width - qr_size) / 2,
+                (
+                    page_width
+                    - qr_size
+                ) / 2,
                 page_height - 500,
                 width=qr_size,
                 height=qr_size,
@@ -2685,34 +3242,48 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # ---------------------------------------------
-            # Clickable PDF link
+            # CLICKABLE LINK
             # ---------------------------------------------
+
             link_text = (
-                "Click here to open the feedback survey"
+                "Click here to open "
+                "the feedback survey"
             )
+
 
             c.setFont(
                 "Helvetica-Bold",
                 12
             )
 
-            link_width = c.stringWidth(
-                link_text,
-                "Helvetica-Bold",
-                12
+
+            link_width = (
+                c.stringWidth(
+                    link_text,
+                    "Helvetica-Bold",
+                    12
+                )
             )
 
+
             link_x = (
-                page_width - link_width
+                page_width
+                - link_width
             ) / 2
 
-            link_y = page_height - 535
+
+            link_y = (
+                page_height
+                - 535
+            )
+
 
             c.drawString(
                 link_x,
                 link_y,
                 link_text
             )
+
 
             c.linkURL(
                 feedback_url,
@@ -2725,19 +3296,32 @@ elif instrument == "Session Feedback Link Creator":
                 relative=0
             )
 
+
             c.save()
 
-            pdf_buffer.seek(0)
 
-            return pdf_buffer.getvalue()
+            pdf_buffer.seek(
+                0
+            )
 
 
-        pdf_bytes = create_feedback_pdf(
-            presenter,
-            session_title,
-            session_date_display,
-            feedback_url,
-            qr_bytes
+            return (
+                pdf_buffer.getvalue()
+            )
+
+
+        # =====================================================
+        # GENERATE PDF
+        # =====================================================
+
+        pdf_bytes = (
+            create_feedback_pdf(
+                presenter,
+                session_title,
+                session_date_display,
+                feedback_url,
+                qr_bytes
+            )
         )
 
 
@@ -2748,22 +3332,57 @@ elif instrument == "Session Feedback Link Creator":
         st.download_button(
             "📄 Download Feedback QR PDF",
             data=pdf_bytes,
-            file_name="session_feedback_qr.pdf",
+            file_name=(
+                "session_feedback_qr.pdf"
+            ),
             mime="application/pdf",
             use_container_width=True
         )
 
+
+    # =========================================================
+    # MISSING INFORMATION MESSAGE
+    # =========================================================
+
     else:
 
+        missing_items = []
 
-        st.info(
-            "Enter a username and select or enter a presenter "
-            "and session title to create the feedback link."
-        )
+
+        if not presenter.strip():
+
+            missing_items.append(
+                "presenter"
+            )
+
+
+        if not username.strip():
+
+            missing_items.append(
+                "username"
+            )
+
+
+        if not session_title.strip():
+
+            missing_items.append(
+                "session title"
+            )
+
+
+        if missing_items:
+
+            st.info(
+                "Complete the "
+                + ", ".join(
+                    missing_items
+                )
+                + " to create the feedback link."
+            )
 
 
     # =========================================================
-    # MANAGE SAVED PRESENTERS
+    # MANAGE SAVED PRESENTERS & SESSIONS
     # =========================================================
 
     with st.expander(
@@ -2773,28 +3392,33 @@ elif instrument == "Session Feedback Link Creator":
         if not github_configured:
 
             st.warning(
-                "GitHub persistence is not configured yet. "
-                "Add the [github] section to Streamlit Secrets."
+                "GitHub persistence is not "
+                "configured yet. "
+                "Add the [github] section "
+                "to Streamlit Secrets."
             )
+
 
         elif not saved_sessions:
 
             st.info(
-                "There are currently no saved presenters."
+                "There are currently "
+                "no saved presenters."
             )
+
 
         else:
 
             st.write(
-                "Remove an individual session title or "
-                "remove a presenter and all of their "
-                "saved sessions."
+                "Update a username, remove "
+                "an individual session title, "
+                "or remove a presenter."
             )
 
 
-            # -------------------------------------------------
-            # Select presenter to manage
-            # -------------------------------------------------
+            # =================================================
+            # SELECT PRESENTER TO MANAGE
+            # =================================================
 
             manage_presenter = st.selectbox(
                 "Presenter to manage",
@@ -2802,46 +3426,84 @@ elif instrument == "Session Feedback Link Creator":
                     saved_sessions.keys()
                 ),
                 index=None,
-                placeholder="Select presenter...",
-                key="manage_feedback_presenter"
+                placeholder=(
+                    "Select presenter..."
+                ),
+                key=(
+                    "manage_feedback_presenter"
+                )
             )
 
 
             if manage_presenter:
 
-                presenter_titles = saved_sessions.get(
-                    manage_presenter,
-                    []
+                manage_info = (
+                    saved_sessions.get(
+                        manage_presenter,
+                        {
+                            "username": "",
+                            "sessions": []
+                        }
+                    )
                 )
 
 
-                # =============================================
-                # REMOVE INDIVIDUAL SESSION
-                # =============================================
+                # =================================================
+                # UPDATE USERNAME
+                # =================================================
 
-                if presenter_titles:
+                st.markdown(
+                    "#### Username"
+                )
 
-                    remove_title = st.selectbox(
-                        "Session title",
-                        options=presenter_titles,
-                        index=None,
-                        placeholder=(
-                            "Select session title..."
-                        ),
-                        key="remove_feedback_title"
+
+                current_username = str(
+                    manage_info.get(
+                        "username",
+                        ""
                     )
+                ).strip()
 
-                    if remove_title:
 
-                        if st.button(
-                            "🗑️ Remove This Session",
-                            use_container_width=True,
-                            key="remove_feedback_session"
-                        ):
+                updated_username = (
+                    st.text_input(
+                        "Username",
+                        value=current_username,
+                        key=(
+                            "manage_feedback_username_"
+                            + manage_presenter
+                        )
+                    )
+                )
+
+
+                if (
+                    updated_username.strip()
+                    != current_username
+                ):
+
+                    if st.button(
+                        "💾 Update Username",
+                        use_container_width=True,
+                        key=(
+                            "update_feedback_username_"
+                            + manage_presenter
+                        )
+                    ):
+
+                        if not updated_username.strip():
+
+                            st.warning(
+                                "Username cannot be blank."
+                            )
+
+
+                        else:
 
                             latest_sessions = (
                                 load_saved_sessions()
                             )
+
 
                             if (
                                 manage_presenter
@@ -2850,33 +3512,131 @@ elif instrument == "Session Feedback Link Creator":
 
                                 latest_sessions[
                                     manage_presenter
-                                ] = [
-                                    title
-                                    for title
-                                    in latest_sessions[
+                                ][
+                                    "username"
+                                ] = (
+                                    updated_username
+                                    .strip()
+                                )
+
+
+                                success = (
+                                    save_saved_sessions(
+                                        latest_sessions,
+                                        commit_message=(
+                                            "Update session "
+                                            "feedback username: "
+                                            f"{manage_presenter}"
+                                        )
+                                    )
+                                )
+
+
+                                if success:
+
+                                    st.success(
+                                        "Username updated."
+                                    )
+
+                                    st.rerun()
+
+
+                # =================================================
+                # REMOVE INDIVIDUAL SESSION
+                # =================================================
+
+                st.divider()
+
+                st.markdown(
+                    "#### Saved Sessions"
+                )
+
+
+                presenter_titles = (
+                    manage_info.get(
+                        "sessions",
+                        []
+                    )
+                )
+
+
+                if presenter_titles:
+
+                    remove_title = st.selectbox(
+                        "Session title to remove",
+                        options=(
+                            presenter_titles
+                        ),
+                        index=None,
+                        placeholder=(
+                            "Select session title..."
+                        ),
+                        key=(
+                            "remove_feedback_title"
+                        )
+                    )
+
+
+                    if remove_title:
+
+                        if st.button(
+                            "🗑️ Remove This Session",
+                            use_container_width=True,
+                            key=(
+                                "remove_feedback_session"
+                            )
+                        ):
+
+                            latest_sessions = (
+                                load_saved_sessions()
+                            )
+
+
+                            if (
+                                manage_presenter
+                                in latest_sessions
+                            ):
+
+                                existing_titles = (
+                                    latest_sessions[
                                         manage_presenter
-                                    ]
-                                    if title != remove_title
+                                    ].get(
+                                        "sessions",
+                                        []
+                                    )
+                                )
+
+
+                                latest_sessions[
+                                    manage_presenter
+                                ][
+                                    "sessions"
+                                ] = [
+
+                                    title
+
+                                    for title
+                                    in existing_titles
+
+                                    if (
+                                        title
+                                        != remove_title
+                                    )
                                 ]
 
-                                # If no titles remain,
-                                # remove presenter
-                                if not latest_sessions[
-                                    manage_presenter
-                                ]:
-                                    del latest_sessions[
-                                        manage_presenter
-                                    ]
 
-                            success = save_saved_sessions(
-                                latest_sessions,
-                                commit_message=(
-                                    "Remove session feedback "
-                                    f"option: "
-                                    f"{manage_presenter} - "
-                                    f"{remove_title}"
+                            success = (
+                                save_saved_sessions(
+                                    latest_sessions,
+                                    commit_message=(
+                                        "Remove session "
+                                        "feedback option: "
+                                        f"{manage_presenter} - "
+                                        f"{remove_title}"
+                                    )
                                 )
                             )
+
 
                             if success:
 
@@ -2887,22 +3647,38 @@ elif instrument == "Session Feedback Link Creator":
                                 st.rerun()
 
 
-                # =============================================
+                else:
+
+                    st.caption(
+                        "This presenter has no "
+                        "saved session titles."
+                    )
+
+
+                # =================================================
                 # REMOVE ENTIRE PRESENTER
-                # =============================================
+                # =================================================
 
                 st.divider()
 
+                st.markdown(
+                    "#### Remove Presenter"
+                )
+
+
                 remove_entire_presenter = (
                     st.checkbox(
-                        f"Remove {manage_presenter} "
-                        "and all saved session titles",
+                        (
+                            f"Remove {manage_presenter} "
+                            "and all saved information"
+                        ),
                         key=(
                             "confirm_remove_"
                             "feedback_presenter"
                         )
                     )
                 )
+
 
                 if remove_entire_presenter:
 
@@ -2920,6 +3696,7 @@ elif instrument == "Session Feedback Link Creator":
                             load_saved_sessions()
                         )
 
+
                         if (
                             manage_presenter
                             in latest_sessions
@@ -2929,14 +3706,18 @@ elif instrument == "Session Feedback Link Creator":
                                 manage_presenter
                             ]
 
-                        success = save_saved_sessions(
-                            latest_sessions,
-                            commit_message=(
-                                "Remove session feedback "
-                                f"presenter: "
-                                f"{manage_presenter}"
+
+                        success = (
+                            save_saved_sessions(
+                                latest_sessions,
+                                commit_message=(
+                                    "Remove session "
+                                    "feedback presenter: "
+                                    f"{manage_presenter}"
+                                )
                             )
                         )
+
 
                         if success:
 
