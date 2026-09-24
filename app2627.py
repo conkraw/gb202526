@@ -1957,7 +1957,7 @@ elif instrument == "Session Feedback Link Creator":
         f"### [Open Session Feedback Survey]({feedback_url})"
     )
 
-    st.caption(feedback_url)
+    #st.caption(feedback_url)
 
     # ---------------------------------------------------------
     # Create PDF
