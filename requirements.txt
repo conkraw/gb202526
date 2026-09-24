@@ -10,3 +10,4 @@ qrcode
 canvas
 letter
 ImageReader
+reportlab
