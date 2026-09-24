@@ -4523,16 +4523,16 @@ elif instrument == "Session Feedback Summary Creator":
                         }
                     )
 
-
-                edited_comment_config = st.data_editor(
-                    comment_config,
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={
-                        "REDCap Field": None
-                    },
-                    key="feedback_summary_comment_editor"
-                )
+    
+                    edited_comment_config = st.data_editor(
+                        comment_config,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "REDCap Field": None
+                        },
+                        key="feedback_summary_comment_editor"
+                    )
 
                     included_comment_rows = (
                         edited_comment_config[
