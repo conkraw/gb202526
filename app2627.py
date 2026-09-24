@@ -2250,10 +2250,24 @@ elif instrument == "Session Feedback Link Creator":
     # DATE
     # ---------------------------------------------------------
 
-    session_date = st.text_input(
+    session_date = st.date_input(
         "Session Date",
-        value="",
-        placeholder="Optional"
+        value=None,
+        format="MM/DD/YYYY"
+    )
+    
+    # REDCap requires M-D-Y with hyphens
+    date_for_redcap = (
+        session_date.strftime("%m-%d-%Y")
+        if session_date
+        else ""
+    )
+    
+    # Friendly date for the PDF
+    session_date_display = (
+        session_date.strftime("%m/%d/%Y")
+        if session_date
+        else ""
     )
 
 
@@ -2322,8 +2336,8 @@ elif instrument == "Session Feedback Link Creator":
             "title": session_title.strip(),
         }
 
-        if session_date.strip():
-            params["date"] = session_date.strip()
+        if date_for_redcap:
+            params["date"] = date_for_redcap
 
         encoded_params = urllib.parse.urlencode(params)
 
@@ -2556,7 +2570,7 @@ elif instrument == "Session Feedback Link Creator":
         pdf_bytes = create_feedback_pdf(
             presenter,
             session_title,
-            session_date,
+            session_date_display,
             feedback_url,
             qr_bytes
         )
