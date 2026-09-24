@@ -1912,9 +1912,12 @@ elif instrument == "Session Feedback Link Creator":
     GITHUB_DATA_FILE = "data/session_feedback_options.json"
 
     DEFAULT_SESSIONS = {
-        "Conrad Krawiec": [
-            "Residency Journal Club"
-        ]
+        "Conrad Krawiec": {
+            "username": "czk11",
+            "sessions": [
+                "Residency Journal Club"
+            ]
+        }
     }
 
     OTHER_OPTION = "➕ Other / enter manually"
@@ -2129,34 +2132,83 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # LOAD SAVED PRESENTERS / SESSIONS
+    # CLEAN / NORMALIZE SAVED DATA
     # =========================================================
-
-    saved_sessions = load_saved_sessions()
-
-    # Clean / sort loaded values
+    
     cleaned_sessions = {}
-
-    for person, titles in saved_sessions.items():
-
+    
+    for person, info in saved_sessions.items():
+    
         person = str(person).strip()
-
+    
         if not person:
             continue
-
-        if not isinstance(titles, list):
-            titles = [titles]
-
-        cleaned_titles = sorted(
-            {
-                str(title).strip()
-                for title in titles
-                if str(title).strip()
+    
+        # -----------------------------------------------------
+        # OLD FORMAT:
+        # "Conrad Krawiec": ["Residency Journal Club"]
+        #
+        # Convert automatically to new format.
+        # -----------------------------------------------------
+    
+        if isinstance(info, list):
+    
+            cleaned_sessions[person] = {
+                "username": "",
+                "sessions": sorted(
+                    {
+                        str(title).strip()
+                        for title in info
+                        if str(title).strip()
+                    }
+                )
             }
-        )
-
-        cleaned_sessions[person] = cleaned_titles
-
+    
+        # -----------------------------------------------------
+        # NEW FORMAT
+        # -----------------------------------------------------
+    
+        elif isinstance(info, dict):
+    
+            username_value = str(
+                info.get(
+                    "username",
+                    ""
+                )
+            ).strip()
+    
+            titles = info.get(
+                "sessions",
+                []
+            )
+    
+            if not isinstance(
+                titles,
+                list
+            ):
+                titles = [
+                    titles
+                ]
+    
+            cleaned_titles = sorted(
+                {
+                    str(title).strip()
+                    for title in titles
+                    if str(title).strip()
+                }
+            )
+    
+            cleaned_sessions[
+                person
+            ] = {
+                "username":
+                    username_value,
+    
+                "sessions":
+                    cleaned_titles
+            }
+    
+    
     saved_sessions = cleaned_sessions
 
 
@@ -2170,38 +2222,49 @@ elif instrument == "Session Feedback Link Creator":
     # ---------------------------------------------------------
     # PRESENTER
     # ---------------------------------------------------------
-
-    presenter_options = (
-        sorted(saved_sessions.keys())
-        + [OTHER_OPTION]
-    )
-
-    selected_presenter = st.selectbox(
-        "Presenter",
-        options=presenter_options,
-        index=None,
-        placeholder="Select presenter..."
-    )
-
+    
     presenter = ""
-
+    username = ""
     manual_presenter = False
-
-
+    
+    
     if selected_presenter == OTHER_OPTION:
-
+    
         manual_presenter = True
-
+    
         presenter = st.text_input(
             "Presenter name",
             value="",
             placeholder="Enter presenter name",
             key="manual_feedback_presenter"
         )
-
+    
+        username = st.text_input(
+            "Username",
+            value="",
+            placeholder="Enter presenter username",
+            key="manual_feedback_username"
+        )
+    
+    
     elif selected_presenter:
-
+    
         presenter = selected_presenter
+    
+        username = saved_sessions.get(
+            presenter,
+            {}
+        ).get(
+            "username",
+            ""
+        )
+    
+        st.text_input(
+            "Username",
+            value=username,
+            disabled=True,
+            key=f"feedback_username_{presenter}"
+        )
 
     # ---------------------------------------------------------
     # USERNAME
@@ -2225,10 +2288,7 @@ elif instrument == "Session Feedback Link Creator":
         # Existing presenter
         if presenter in saved_sessions:
 
-            title_options = (
-                sorted(saved_sessions[presenter])
-                + [OTHER_OPTION]
-            )
+            title_options = (sorted(saved_sessions[presenter].get("sessions",[])) + [OTHER_OPTION])
 
             selected_title = st.selectbox(
                 "Session Title",
@@ -2303,40 +2363,108 @@ elif instrument == "Session Feedback Link Creator":
     # =========================================================
     # SAVE NEW PRESENTER / TITLE
     # =========================================================
-
-    # Show save button whenever something was manually entered
     if (
-        presenter.strip()
+        username.strip()
+        and presenter.strip()
         and session_title.strip()
         and (manual_presenter or manual_title)
     ):
-
+    
         if st.button(
             "💾 Save Presenter / Session for Future Use",
             use_container_width=True,
             key="save_feedback_presenter_session"
         ):
-
+    
             presenter_clean = presenter.strip()
+            username_clean = username.strip()
             title_clean = session_title.strip()
-
-            # Reload before writing so we have the latest copy
+    
             latest_sessions = load_saved_sessions()
-
-            if presenter_clean not in latest_sessions:
-                latest_sessions[presenter_clean] = []
-
-            existing_titles = latest_sessions[
+    
+    
+            # -------------------------------------------------
+            # Normalize old-format presenter if necessary
+            # -------------------------------------------------
+    
+            if presenter_clean in latest_sessions:
+    
+                if isinstance(
+                    latest_sessions[
+                        presenter_clean
+                    ],
+                    list
+                ):
+    
+                    latest_sessions[
+                        presenter_clean
+                    ] = {
+                        "username":
+                            username_clean,
+    
+                        "sessions":
+                            latest_sessions[
+                                presenter_clean
+                            ]
+                    }
+    
+            else:
+    
+                latest_sessions[
+                    presenter_clean
+                ] = {
+                    "username":
+                        username_clean,
+    
+                    "sessions":
+                        []
+                }
+    
+    
+            # -------------------------------------------------
+            # Save/update username
+            # -------------------------------------------------
+    
+            latest_sessions[
                 presenter_clean
-            ]
-
-            if title_clean not in existing_titles:
-                existing_titles.append(title_clean)
-
-            latest_sessions[presenter_clean] = sorted(
-                set(existing_titles)
+            ][
+                "username"
+            ] = username_clean
+    
+    
+            # -------------------------------------------------
+            # Save session title
+            # -------------------------------------------------
+    
+            existing_titles = (
+                latest_sessions[
+                    presenter_clean
+                ]
+                .get(
+                    "sessions",
+                    []
+                )
             )
-
+    
+    
+            if title_clean not in existing_titles:
+    
+                existing_titles.append(
+                    title_clean
+                )
+    
+    
+            latest_sessions[
+                presenter_clean
+            ][
+                "sessions"
+            ] = sorted(
+                set(
+                    existing_titles
+                )
+            )
+    
+    
             success = save_saved_sessions(
                 latest_sessions,
                 commit_message=(
@@ -2344,15 +2472,16 @@ elif instrument == "Session Feedback Link Creator":
                     f"{presenter_clean} - {title_clean}"
                 )
             )
-
+    
+    
             if success:
+    
                 st.success(
                     f"Saved {presenter_clean} — "
                     f"{title_clean}"
                 )
-
+    
                 st.rerun()
-
 
     # =========================================================
     # CREATE FEEDBACK LINK
