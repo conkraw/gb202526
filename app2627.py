@@ -4402,176 +4402,232 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-                # =============================================
-                # QUESTION LABEL EDITOR
-                # =============================================
-
-                #st.subheader("Evaluation Questions")
-
-                #st.caption(
-                #    "The REDCap variable names are detected "
-                #    "automatically. Edit the question wording "
-                #    "below whenever your survey changes."
-                #)
-
-
-                if detected_questions:
-
-                    question_config = pd.DataFrame(
-                        {
-                            "Include": [
-                                True
-                                for _ in detected_questions
-                            ],
-
-                            "REDCap Field":
-                                detected_questions,
-
-                            "Question / Evaluation Item":
-                                [
-                                    DEFAULT_QUESTION_LABELS.get(
-                                        field,
-                                        field
-                                    )
-                                    for field
-                                    in detected_questions
-                                ],
-                        }
+                # =========================================================
+                # QUESTION / COMMENT MAPPING
+                # =========================================================
+                # Normal behavior:
+                # Use the detected REDCap fields and the default labels.
+                #
+                # The mapping tables are hidden unless troubleshooting
+                # is turned on.
+                # =========================================================
+                
+                question_columns = detected_questions
+                
+                question_labels = {
+                    field: DEFAULT_QUESTION_LABELS.get(
+                        field,
+                        field
                     )
-
-
-                    edited_question_config = st.data_editor(
-                        question_config,
-                        hide_index=True,
-                        use_container_width=True,
-                        column_config={
-                            "REDCap Field": None
-                        },
-                        key="feedback_summary_question_editor"
+                    for field in detected_questions
+                }
+                
+                
+                comment_columns = detected_comments
+                
+                comment_labels = {
+                    field: DEFAULT_COMMENT_LABELS.get(
+                        field,
+                        field
                     )
-
-
-                    included_question_rows = (
-                        edited_question_config[
-                            edited_question_config[
-                                "Include"
-                            ] == True
-                        ]
+                    for field in detected_comments
+                }
+                
+                
+                # =========================================================
+                # TROUBLESHOOTING
+                # =========================================================
+                
+                with st.expander(
+                    "🛠 Troubleshooting",
+                    expanded=False
+                ):
+                
+                    show_question_mapping = st.toggle(
+                        "Show REDCap question mapping",
+                        value=False,
+                        key="feedback_summary_show_mapping"
                     )
-
-
-                    question_columns = (
-                        included_question_rows[
-                            "REDCap Field"
-                        ]
-                        .tolist()
-                    )
-
-
-                    question_labels = dict(
-                        zip(
-                            included_question_rows[
-                                "REDCap Field"
-                            ],
-
-                            included_question_rows[
-                                "Question / Evaluation Item"
-                            ]
+                
+                
+                    if show_question_mapping:
+                
+                        st.caption(
+                            "Use this only to verify or temporarily adjust "
+                            "how REDCap fields are mapped to the report."
                         )
-                    )
-
-                else:
-
-                    question_columns = []
-                    question_labels = {}
-
-                    st.warning(
-                        "No q### rating fields were detected."
-                    )
-
-
-                # =============================================
-                # COMMENT LABEL EDITOR
-                # =============================================
-
-                st.subheader(
-                    "Narrative Comment Questions"
-                )
-
-
-                if detected_comments:
-
-                    comment_config = pd.DataFrame(
-                        {
-                            "Include": [
-                                True
-                                for _ in detected_comments
-                            ],
-
-                            "REDCap Field":
-                                detected_comments,
-
-                            "Comment Prompt":
-                                [
-                                    DEFAULT_COMMENT_LABELS.get(
-                                        field,
-                                        field
-                                    )
-                                    for field
-                                    in detected_comments
-                                ],
-                        }
-                    )
-
-    
-                    edited_comment_config = st.data_editor(
-                        comment_config,
-                        hide_index=True,
-                        use_container_width=True,
-                        column_config={
-                            "REDCap Field": None
-                        },
-                        key="feedback_summary_comment_editor"
-                    )
-
-                    included_comment_rows = (
-                        edited_comment_config[
-                            edited_comment_config[
-                                "Include"
-                            ] == True
-                        ]
-                    )
-
-
-                    comment_columns = (
-                        included_comment_rows[
-                            "REDCap Field"
-                        ]
-                        .tolist()
-                    )
-
-
-                    comment_labels = dict(
-                        zip(
-                            included_comment_rows[
-                                "REDCap Field"
-                            ],
-
-                            included_comment_rows[
-                                "Comment Prompt"
-                            ]
+                
+                
+                        # =====================================================
+                        # RATING QUESTIONS
+                        # =====================================================
+                
+                        st.markdown(
+                            "#### Rating Questions"
                         )
-                    )
-
-                else:
-
-                    comment_columns = []
-                    comment_labels = {}
-
-                    st.info(
-                        "No narrative comment fields "
-                        "were detected."
-                    )
+                
+                
+                        if detected_questions:
+                
+                            question_config = pd.DataFrame(
+                                {
+                                    "Include": [
+                                        True
+                                        for _ in detected_questions
+                                    ],
+                
+                                    "REDCap Field":
+                                        detected_questions,
+                
+                                    "Question / Evaluation Item":
+                                        [
+                                            DEFAULT_QUESTION_LABELS.get(
+                                                field,
+                                                field
+                                            )
+                                            for field
+                                            in detected_questions
+                                        ],
+                                }
+                            )
+                
+                
+                            edited_question_config = st.data_editor(
+                                question_config,
+                                hide_index=True,
+                                use_container_width=True,
+                                disabled=[
+                                    "REDCap Field"
+                                ],
+                                key=(
+                                    "feedback_summary_"
+                                    "question_editor"
+                                )
+                            )
+                
+                
+                            included_question_rows = (
+                                edited_question_config[
+                                    edited_question_config[
+                                        "Include"
+                                    ] == True
+                                ]
+                            )
+                
+                
+                            # Override normal mappings with
+                            # troubleshooting selections
+                            question_columns = (
+                                included_question_rows[
+                                    "REDCap Field"
+                                ]
+                                .tolist()
+                            )
+                
+                
+                            question_labels = dict(
+                                zip(
+                                    included_question_rows[
+                                        "REDCap Field"
+                                    ],
+                
+                                    included_question_rows[
+                                        "Question / Evaluation Item"
+                                    ]
+                                )
+                            )
+                
+                        else:
+                
+                            st.warning(
+                                "No q### rating fields were detected."
+                            )
+                
+                
+                        # =====================================================
+                        # NARRATIVE COMMENT QUESTIONS
+                        # =====================================================
+                
+                        st.markdown(
+                            "#### Narrative Comment Questions"
+                        )
+                
+                
+                        if detected_comments:
+                
+                            comment_config = pd.DataFrame(
+                                {
+                                    "Include": [
+                                        True
+                                        for _ in detected_comments
+                                    ],
+                
+                                    "REDCap Field":
+                                        detected_comments,
+                
+                                    "Comment Prompt":
+                                        [
+                                            DEFAULT_COMMENT_LABELS.get(
+                                                field,
+                                                field
+                                            )
+                                            for field
+                                            in detected_comments
+                                        ],
+                                }
+                            )
+                
+                
+                            edited_comment_config = st.data_editor(
+                                comment_config,
+                                hide_index=True,
+                                use_container_width=True,
+                                disabled=[
+                                    "REDCap Field"
+                                ],
+                                key=(
+                                    "feedback_summary_"
+                                    "comment_editor"
+                                )
+                            )
+                
+                
+                            included_comment_rows = (
+                                edited_comment_config[
+                                    edited_comment_config[
+                                        "Include"
+                                    ] == True
+                                ]
+                            )
+                
+                
+                            # Override normal mappings with
+                            # troubleshooting selections
+                            comment_columns = (
+                                included_comment_rows[
+                                    "REDCap Field"
+                                ]
+                                .tolist()
+                            )
+                
+                
+                            comment_labels = dict(
+                                zip(
+                                    included_comment_rows[
+                                        "REDCap Field"
+                                    ],
+                
+                                    included_comment_rows[
+                                        "Comment Prompt"
+                                    ]
+                                )
+                            )
+                
+                        else:
+                
+                            st.info(
+                                "No narrative comment fields were detected."
+                            )
 
 
                 # =============================================
