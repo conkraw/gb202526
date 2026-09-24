@@ -1,5 +1,8 @@
 {
-  "Conrad Krawiec": [
-    "Residency Journal Club"
-  ]
+  "Conrad Krawiec": {
+    "username": "czk11",
+    "sessions": [
+      "Residency Journal Club"
+    ]
+  }
 }
