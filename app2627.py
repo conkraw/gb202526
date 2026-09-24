@@ -2780,5 +2780,2015 @@ elif instrument == "Session Feedback Link Creator":
 
                             st.rerun()
 
-elif instrument == "Session Feedback Summary Creator": 
+elif instrument == "Session Feedback Summary":
     st.header("📋 Session Feedback Summary Creator")
+
+    import io
+    import re
+    import html
+    import zipfile
+    import hashlib
+    import pandas as pd
+
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import (
+        WD_TABLE_ALIGNMENT,
+        WD_CELL_VERTICAL_ALIGNMENT
+    )
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+
+    # =========================================================
+    # DEFAULT QUESTION / COMMENT LABELS
+    # =========================================================
+    #
+    # These are only starting labels.
+    #
+    # You will ALSO be able to edit the wording directly
+    # in the app after uploading the REDCap file.
+    #
+    # Therefore, if your REDCap questions change later,
+    # you do not have to rewrite the report code.
+    # =========================================================
+
+    DEFAULT_QUESTION_LABELS = {
+        "q001": "Question 1",
+        "q002": "Question 2",
+        "q003": "Question 3",
+        "q004": "Question 4",
+        "q005": "Question 5",
+        "q006": "Question 6",
+        "q007": "Question 7",
+        "q008": "Question 8",
+    }
+
+    DEFAULT_COMMENT_LABELS = {
+        "session_c001": "Comment Question 1",
+        "session_c002": "Comment Question 2",
+    }
+
+
+    # =========================================================
+    # HELPER FUNCTIONS
+    # =========================================================
+
+    def get_academic_year(value):
+        """
+        Academic year starts July 1.
+
+        Examples:
+        09/10/2026 -> 2026-2027
+        03/10/2027 -> 2026-2027
+        """
+
+        d = pd.to_datetime(
+            value,
+            errors="coerce"
+        )
+
+        if pd.isna(d):
+            return "Unknown"
+
+        if d.month >= 7:
+            return f"{d.year}-{d.year + 1}"
+
+        return f"{d.year - 1}-{d.year}"
+
+
+    def clean_redcap_comment(value):
+        """
+        Remove REDCap HTML formatting from narrative comments.
+        """
+
+        if pd.isna(value):
+            return ""
+
+        text = html.unescape(
+            str(value)
+        )
+
+        text = re.sub(
+            r"<br\s*/?>",
+            "\n",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            r"</p\s*>",
+            "\n",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            r"<[^>]+>",
+            "",
+            text
+        )
+
+        text = text.replace(
+            "\xa0",
+            " "
+        )
+
+        text = re.sub(
+            r"[ \t]+",
+            " ",
+            text
+        )
+
+        text = re.sub(
+            r"\n\s*\n+",
+            "\n",
+            text
+        )
+
+        return text.strip()
+
+
+    def safe_filename(value):
+
+        value = re.sub(
+            r"[^A-Za-z0-9._ -]",
+            "",
+            str(value)
+        )
+
+        value = value.strip().replace(
+            " ",
+            "_"
+        )
+
+        return value or "Presenter"
+
+
+    def numeric_field_sort(field_name):
+        """
+        Keeps q001, q002, q003 ... q010 in the correct order.
+        """
+
+        match = re.search(
+            r"(\d+)$",
+            str(field_name)
+        )
+
+        if match:
+            return int(
+                match.group(1)
+            )
+
+        return 9999
+
+
+    # =========================================================
+    # WORD FORMATTING HELPERS
+    # =========================================================
+
+    def shade_cell(
+        cell,
+        fill="D9E1F2"
+    ):
+
+        tc_pr = cell._tc.get_or_add_tcPr()
+
+        shading = tc_pr.find(
+            qn("w:shd")
+        )
+
+        if shading is None:
+
+            shading = OxmlElement(
+                "w:shd"
+            )
+
+            tc_pr.append(
+                shading
+            )
+
+        shading.set(
+            qn("w:fill"),
+            fill
+        )
+
+
+    def set_cell_text(
+        cell,
+        text,
+        bold=False,
+        size=9,
+        alignment="center"
+    ):
+
+        cell.text = ""
+
+        paragraph = cell.paragraphs[0]
+
+        if alignment == "left":
+            paragraph.alignment = (
+                WD_ALIGN_PARAGRAPH.LEFT
+            )
+        else:
+            paragraph.alignment = (
+                WD_ALIGN_PARAGRAPH.CENTER
+            )
+
+        paragraph.paragraph_format.space_after = Pt(0)
+
+        run = paragraph.add_run(
+            str(text)
+        )
+
+        run.bold = bold
+        run.font.name = "Arial"
+        run.font.size = Pt(size)
+
+        cell.vertical_alignment = (
+            WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        )
+
+
+    def add_section_heading(
+        document,
+        text
+    ):
+
+        paragraph = document.add_paragraph()
+
+        paragraph.paragraph_format.space_before = Pt(8)
+        paragraph.paragraph_format.space_after = Pt(3)
+
+        run = paragraph.add_run(
+            text
+        )
+
+        run.bold = True
+        run.underline = True
+        run.font.name = "Arial"
+        run.font.size = Pt(11)
+
+
+    # =========================================================
+    # CREATE PRESENTER DATA
+    # =========================================================
+
+    def prepare_presenter_data(
+        evaluation_df,
+        presenter_name,
+        question_columns
+    ):
+
+        presenter_df = evaluation_df[
+            evaluation_df["presenter"]
+            .astype(str)
+            .str.strip()
+            == presenter_name
+        ].copy()
+
+
+        # -----------------------------------------------------
+        # Convert rating questions to numbers
+        # -----------------------------------------------------
+
+        for col in question_columns:
+
+            presenter_df[col] = pd.to_numeric(
+                presenter_df[col],
+                errors="coerce"
+            )
+
+
+        # -----------------------------------------------------
+        # Session date
+        # -----------------------------------------------------
+
+        if "date" in presenter_df.columns:
+
+            presenter_df["_session_date"] = pd.to_datetime(
+                presenter_df["date"],
+                errors="coerce"
+            )
+
+        else:
+
+            presenter_df["_session_date"] = pd.NaT
+
+
+        # -----------------------------------------------------
+        # If date was missing, use REDCap timestamp as fallback
+        # -----------------------------------------------------
+
+        if "form_1_timestamp" in presenter_df.columns:
+
+            timestamp_date = pd.to_datetime(
+                presenter_df["form_1_timestamp"],
+                errors="coerce"
+            )
+
+            presenter_df[
+                "_session_date"
+            ] = presenter_df[
+                "_session_date"
+            ].fillna(
+                timestamp_date
+            )
+
+
+        # -----------------------------------------------------
+        # Academic year
+        # -----------------------------------------------------
+
+        presenter_df[
+            "_academic_year"
+        ] = presenter_df[
+            "_session_date"
+        ].apply(
+            get_academic_year
+        )
+
+
+        # -----------------------------------------------------
+        # Clean session title
+        # -----------------------------------------------------
+
+        presenter_df["_title"] = (
+            presenter_df["title"]
+            .fillna("Untitled Session")
+            .astype(str)
+            .str.strip()
+        )
+
+        presenter_df.loc[
+            presenter_df["_title"] == "",
+            "_title"
+        ] = "Untitled Session"
+
+
+        # -----------------------------------------------------
+        # SESSION COUNT
+        #
+        # One unique:
+        #
+        # Presenter + Session Title + Date
+        #
+        # = one session delivered.
+        #
+        # Therefore 15 evaluations from one session still
+        # count as ONE session.
+        # -----------------------------------------------------
+
+        presenter_df[
+            "_session_day"
+        ] = presenter_df[
+            "_session_date"
+        ].dt.strftime(
+            "%Y-%m-%d"
+        )
+
+        presenter_df[
+            "_session_day"
+        ] = presenter_df[
+            "_session_day"
+        ].fillna(
+            "Unknown"
+        )
+
+        presenter_df[
+            "_session_key"
+        ] = (
+            presenter_df["_title"]
+            + "||"
+            + presenter_df["_session_day"]
+        )
+
+        return presenter_df
+
+
+    # =========================================================
+    # SESSION SUMMARY TABLE
+    # =========================================================
+
+    def create_session_summary(
+        presenter_df,
+        question_columns
+    ):
+
+        summary_rows = []
+
+        grouped = presenter_df.groupby(
+            [
+                "_academic_year",
+                "_title"
+            ],
+            dropna=False
+        )
+
+
+        for (
+            academic_year,
+            session_title
+        ), group in grouped:
+
+            # ---------------------------------------------
+            # Mean of all available 1-5 question responses
+            # for this academic year/session title
+            # ---------------------------------------------
+
+            if question_columns:
+
+                scores = (
+                    group[
+                        question_columns
+                    ]
+                    .stack()
+                    .dropna()
+                )
+
+            else:
+
+                scores = pd.Series(
+                    dtype=float
+                )
+
+
+            if len(scores) > 0:
+
+                rating_average = float(
+                    scores.mean()
+                )
+
+            else:
+
+                rating_average = None
+
+
+            sessions_delivered = (
+                group[
+                    "_session_key"
+                ].nunique()
+            )
+
+            number_evaluations = len(
+                group
+            )
+
+
+            summary_rows.append(
+                {
+                    "Academic Year":
+                        academic_year,
+
+                    "Session Title":
+                        session_title,
+
+                    "Sessions Delivered":
+                        sessions_delivered,
+
+                    "Rating Average":
+                        rating_average,
+
+                    "Number of Evaluations":
+                        number_evaluations,
+                }
+            )
+
+
+        summary_df = pd.DataFrame(
+            summary_rows
+        )
+
+
+        if not summary_df.empty:
+
+            summary_df[
+                "_sort_year"
+            ] = summary_df[
+                "Academic Year"
+            ].apply(
+                lambda x:
+                    int(
+                        str(x).split("-")[0]
+                    )
+                    if str(x).split("-")[0].isdigit()
+                    else 0
+            )
+
+            summary_df = summary_df.sort_values(
+                [
+                    "_sort_year",
+                    "Session Title"
+                ],
+                ascending=[
+                    False,
+                    True
+                ]
+            )
+
+            summary_df = summary_df.drop(
+                columns=[
+                    "_sort_year"
+                ]
+            )
+
+
+        return summary_df
+
+
+    # =========================================================
+    # CREATE WORD DOCUMENT
+    # =========================================================
+
+    def create_presenter_word_report(
+        evaluation_df,
+        presenter_name,
+        question_columns,
+        question_labels,
+        comment_columns,
+        comment_labels,
+        custom_comment_summary=""
+    ):
+
+        presenter_df = prepare_presenter_data(
+            evaluation_df,
+            presenter_name,
+            question_columns
+        )
+
+        session_summary = create_session_summary(
+            presenter_df,
+            question_columns
+        )
+
+
+        # =====================================================
+        # OVERALL SCORE
+        # =====================================================
+
+        if question_columns:
+
+            all_scores = (
+                presenter_df[
+                    question_columns
+                ]
+                .stack()
+                .dropna()
+            )
+
+        else:
+
+            all_scores = pd.Series(
+                dtype=float
+            )
+
+
+        if len(all_scores) > 0:
+
+            overall_rating = float(
+                all_scores.mean()
+            )
+
+            overall_rating_text = (
+                f"{overall_rating:.2f}/5.00"
+            )
+
+        else:
+
+            overall_rating = None
+            overall_rating_text = "N/A"
+
+
+        total_sessions = (
+            presenter_df[
+                "_session_key"
+            ].nunique()
+        )
+
+        total_evaluations = len(
+            presenter_df
+        )
+
+
+        # =====================================================
+        # COMMENTS
+        # =====================================================
+
+        cleaned_comments = {}
+
+        evaluations_with_comments = pd.Series(
+            False,
+            index=presenter_df.index
+        )
+
+        total_comments = 0
+
+
+        for comment_col in comment_columns:
+
+            entries = []
+
+            for idx, row in presenter_df.iterrows():
+
+                comment = clean_redcap_comment(
+                    row.get(
+                        comment_col,
+                        ""
+                    )
+                )
+
+                if not comment:
+                    continue
+
+
+                total_comments += 1
+
+                evaluations_with_comments.loc[
+                    idx
+                ] = True
+
+
+                session_date = pd.to_datetime(
+                    row.get(
+                        "_session_date"
+                    ),
+                    errors="coerce"
+                )
+
+
+                if pd.isna(
+                    session_date
+                ):
+
+                    date_text = ""
+
+                else:
+
+                    date_text = session_date.strftime(
+                        "%m/%d/%Y"
+                    )
+
+
+                entries.append(
+                    {
+                        "date":
+                            date_text,
+
+                        "title":
+                            row.get(
+                                "_title",
+                                ""
+                            ),
+
+                        "comment":
+                            comment,
+                    }
+                )
+
+
+            cleaned_comments[
+                comment_col
+            ] = entries
+
+
+        number_evaluations_with_comments = int(
+            evaluations_with_comments.sum()
+        )
+
+
+        # =====================================================
+        # WORD DOCUMENT
+        # =====================================================
+
+        document = Document()
+
+        section = document.sections[0]
+
+        section.top_margin = Inches(0.55)
+        section.bottom_margin = Inches(0.55)
+        section.left_margin = Inches(0.55)
+        section.right_margin = Inches(0.55)
+
+
+        # -----------------------------------------------------
+        # Default font
+        # -----------------------------------------------------
+
+        normal_style = document.styles[
+            "Normal"
+        ]
+
+        normal_style.font.name = "Arial"
+        normal_style.font.size = Pt(9)
+
+
+        # =====================================================
+        # PRESENTER NAME
+        # =====================================================
+
+        paragraph = document.add_paragraph()
+
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            2
+        )
+
+        run = paragraph.add_run(
+            presenter_name
+        )
+
+        run.bold = True
+        run.font.name = "Arial"
+        run.font.size = Pt(16)
+
+
+        # =====================================================
+        # TITLE
+        # =====================================================
+
+        paragraph = document.add_paragraph()
+
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            7
+        )
+
+        run = paragraph.add_run(
+            "Teaching Evaluation Summary"
+        )
+
+        run.bold = True
+        run.font.name = "Arial"
+        run.font.size = Pt(12)
+
+
+        # =====================================================
+        # OVERALL SUMMARY
+        # =====================================================
+
+        paragraph = document.add_paragraph()
+
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            8
+        )
+
+        run = paragraph.add_run(
+            f"Sessions Delivered: {total_sessions}"
+            f"    |    "
+            f"Completed Evaluations: {total_evaluations}"
+            f"    |    "
+            f"Overall Rating: {overall_rating_text}"
+        )
+
+        run.font.name = "Arial"
+        run.font.size = Pt(9)
+
+
+        # =====================================================
+        # TEACHING ACTIVITY SUMMARY
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Teaching Activity Summary"
+        )
+
+
+        activity_table = document.add_table(
+            rows=1,
+            cols=5
+        )
+
+        activity_table.style = "Table Grid"
+
+        activity_table.alignment = (
+            WD_TABLE_ALIGNMENT.CENTER
+        )
+
+        activity_table.autofit = True
+
+
+        activity_headers = [
+            "Academic Year",
+            "Session Title",
+            "Sessions\nDelivered",
+            "Rating Average\nLow 1 - High 5",
+            "Number of\nEvaluations",
+        ]
+
+
+        for index, header in enumerate(
+            activity_headers
+        ):
+
+            shade_cell(
+                activity_table.rows[
+                    0
+                ].cells[index]
+            )
+
+            set_cell_text(
+                activity_table.rows[
+                    0
+                ].cells[index],
+                header,
+                bold=True,
+                size=8
+            )
+
+
+        for _, row in session_summary.iterrows():
+
+            cells = activity_table.add_row().cells
+
+
+            rating = row[
+                "Rating Average"
+            ]
+
+
+            if pd.isna(rating):
+
+                rating_text = "N/A"
+
+            else:
+
+                rating_text = (
+                    f"{rating:.2f}"
+                )
+
+
+            values = [
+                row[
+                    "Academic Year"
+                ],
+
+                row[
+                    "Session Title"
+                ],
+
+                int(
+                    row[
+                        "Sessions Delivered"
+                    ]
+                ),
+
+                rating_text,
+
+                int(
+                    row[
+                        "Number of Evaluations"
+                    ]
+                ),
+            ]
+
+
+            for index, value in enumerate(
+                values
+            ):
+
+                set_cell_text(
+                    cells[index],
+                    value,
+                    size=8,
+                    alignment=(
+                        "left"
+                        if index == 1
+                        else "center"
+                    )
+                )
+
+
+        # =====================================================
+        # TEACHING EVALUATIONS — QUESTION AVERAGES
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Teaching Evaluations"
+        )
+
+
+        if question_columns:
+
+            question_table = document.add_table(
+                rows=1,
+                cols=3
+            )
+
+            question_table.style = "Table Grid"
+
+            question_table.alignment = (
+                WD_TABLE_ALIGNMENT.CENTER
+            )
+
+
+            question_headers = [
+                "Evaluation Item",
+                (
+                    "Average Response\n"
+                    "1 = Low / Strongly Disagree\n"
+                    "5 = High / Strongly Agree"
+                ),
+                "N",
+            ]
+
+
+            for index, header in enumerate(
+                question_headers
+            ):
+
+                shade_cell(
+                    question_table.rows[
+                        0
+                    ].cells[index]
+                )
+
+                set_cell_text(
+                    question_table.rows[
+                        0
+                    ].cells[index],
+                    header,
+                    bold=True,
+                    size=8
+                )
+
+
+            for question_col in question_columns:
+
+                values = pd.to_numeric(
+                    presenter_df[
+                        question_col
+                    ],
+                    errors="coerce"
+                ).dropna()
+
+
+                if len(values) > 0:
+
+                    average_text = (
+                        f"{values.mean():.2f}"
+                    )
+
+                else:
+
+                    average_text = "N/A"
+
+
+                cells = (
+                    question_table
+                    .add_row()
+                    .cells
+                )
+
+
+                set_cell_text(
+                    cells[0],
+                    question_labels.get(
+                        question_col,
+                        question_col
+                    ),
+                    size=8,
+                    alignment="left"
+                )
+
+                set_cell_text(
+                    cells[1],
+                    average_text,
+                    size=8
+                )
+
+                set_cell_text(
+                    cells[2],
+                    len(values),
+                    size=8
+                )
+
+        else:
+
+            paragraph = document.add_paragraph(
+                "No rating questions were detected."
+            )
+
+            paragraph.runs[
+                0
+            ].font.size = Pt(8.5)
+
+
+        # =====================================================
+        # NARRATIVE FEEDBACK SUMMARY
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Narrative Feedback Summary"
+        )
+
+
+        # -----------------------------------------------------
+        # Optional custom summary
+        # -----------------------------------------------------
+
+        if custom_comment_summary.strip():
+
+            paragraph = document.add_paragraph()
+
+            paragraph.paragraph_format.space_after = Pt(
+                5
+            )
+
+            run = paragraph.add_run(
+                custom_comment_summary.strip()
+            )
+
+            run.font.name = "Arial"
+            run.font.size = Pt(9)
+
+        else:
+
+            # Factual automatic summary
+            paragraph = document.add_paragraph()
+
+            paragraph.paragraph_format.space_after = Pt(
+                5
+            )
+
+            run = paragraph.add_run(
+                f"Written feedback was provided on "
+                f"{number_evaluations_with_comments} of "
+                f"{total_evaluations} completed evaluations. "
+                f"A total of {total_comments} narrative "
+                f"comment(s) were submitted."
+            )
+
+            run.font.name = "Arial"
+            run.font.size = Pt(9)
+
+
+        # -----------------------------------------------------
+        # Comment counts by question/prompt
+        # -----------------------------------------------------
+
+        if comment_columns:
+
+            comment_summary_table = document.add_table(
+                rows=1,
+                cols=2
+            )
+
+            comment_summary_table.style = (
+                "Table Grid"
+            )
+
+            comment_summary_table.alignment = (
+                WD_TABLE_ALIGNMENT.CENTER
+            )
+
+
+            shade_cell(
+                comment_summary_table.rows[
+                    0
+                ].cells[0]
+            )
+
+            shade_cell(
+                comment_summary_table.rows[
+                    0
+                ].cells[1]
+            )
+
+
+            set_cell_text(
+                comment_summary_table.rows[
+                    0
+                ].cells[0],
+                "Narrative Feedback Item",
+                bold=True,
+                size=8
+            )
+
+            set_cell_text(
+                comment_summary_table.rows[
+                    0
+                ].cells[1],
+                "Comments Submitted",
+                bold=True,
+                size=8
+            )
+
+
+            for comment_col in comment_columns:
+
+                cells = (
+                    comment_summary_table
+                    .add_row()
+                    .cells
+                )
+
+
+                set_cell_text(
+                    cells[0],
+                    comment_labels.get(
+                        comment_col,
+                        comment_col
+                    ),
+                    size=8,
+                    alignment="left"
+                )
+
+                set_cell_text(
+                    cells[1],
+                    len(
+                        cleaned_comments.get(
+                            comment_col,
+                            []
+                        )
+                    ),
+                    size=8
+                )
+
+
+        # =====================================================
+        # VERBATIM COMMENTS
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Learner Comments"
+        )
+
+
+        comments_written = False
+
+
+        for comment_col in comment_columns:
+
+            entries = cleaned_comments.get(
+                comment_col,
+                []
+            )
+
+
+            if not entries:
+                continue
+
+
+            comments_written = True
+
+
+            # ---------------------------------------------
+            # Prompt heading
+            # ---------------------------------------------
+
+            paragraph = document.add_paragraph()
+
+            paragraph.paragraph_format.space_before = Pt(
+                4
+            )
+
+            paragraph.paragraph_format.space_after = Pt(
+                1
+            )
+
+            run = paragraph.add_run(
+                comment_labels.get(
+                    comment_col,
+                    comment_col
+                )
+            )
+
+            run.bold = True
+            run.font.name = "Arial"
+            run.font.size = Pt(9)
+
+
+            # ---------------------------------------------
+            # Individual comments
+            # ---------------------------------------------
+
+            for entry in entries:
+
+                context = []
+
+                if entry["date"]:
+                    context.append(
+                        entry["date"]
+                    )
+
+                if entry["title"]:
+                    context.append(
+                        entry["title"]
+                    )
+
+
+                if context:
+
+                    prefix = (
+                        " — ".join(
+                            context
+                        )
+                        + ": "
+                    )
+
+                else:
+
+                    prefix = ""
+
+
+                paragraph = document.add_paragraph(
+                    style="List Bullet"
+                )
+
+                paragraph.paragraph_format.space_after = Pt(
+                    1
+                )
+
+                run = paragraph.add_run(
+                    prefix
+                    + entry["comment"]
+                )
+
+                run.font.name = "Arial"
+                run.font.size = Pt(8.5)
+
+
+        if not comments_written:
+
+            paragraph = document.add_paragraph(
+                "No narrative comments were submitted."
+            )
+
+            paragraph.runs[
+                0
+            ].font.size = Pt(8.5)
+
+
+        # -----------------------------------------------------
+        # Note
+        # -----------------------------------------------------
+
+        paragraph = document.add_paragraph()
+
+        paragraph.paragraph_format.space_before = Pt(
+            6
+        )
+
+        run = paragraph.add_run(
+            "Learner comments are presented verbatim "
+            "except for removal of REDCap HTML formatting."
+        )
+
+        run.italic = True
+        run.font.name = "Arial"
+        run.font.size = Pt(7.5)
+
+
+        # =====================================================
+        # SAVE WORD FILE TO MEMORY
+        # =====================================================
+
+        output = io.BytesIO()
+
+        document.save(
+            output
+        )
+
+        output.seek(0)
+
+        return output.getvalue()
+
+
+    # =========================================================
+    # USER INTERFACE
+    # =========================================================
+
+    st.write(
+        "Upload the REDCap CSV export to create "
+        "promotion-ready teaching evaluation summaries "
+        "for each presenter."
+    )
+
+    st.caption(
+        "A session is counted once for each unique "
+        "presenter + session title + session date. "
+        "Multiple learner evaluations from the same session "
+        "do not increase the session count."
+    )
+
+
+    # =========================================================
+    # UPLOAD REDCAP FILE
+    # =========================================================
+
+    uploaded_file = st.file_uploader(
+        "Upload REDCap Evaluation CSV",
+        type=["csv"],
+        key="session_feedback_summary_upload"
+    )
+
+
+    if uploaded_file is not None:
+
+        # -----------------------------------------------------
+        # Read file
+        # -----------------------------------------------------
+
+        file_bytes = uploaded_file.getvalue()
+
+        current_file_hash = hashlib.sha256(
+            file_bytes
+        ).hexdigest()
+
+
+        # Clear old generated reports when a new file is uploaded
+        if (
+            st.session_state.get(
+                "feedback_summary_file_hash"
+            )
+            != current_file_hash
+        ):
+
+            st.session_state[
+                "feedback_summary_file_hash"
+            ] = current_file_hash
+
+            st.session_state.pop(
+                "feedback_summary_reports",
+                None
+            )
+
+            st.session_state.pop(
+                "feedback_summary_zip",
+                None
+            )
+
+
+        try:
+
+            evaluation_df = pd.read_csv(
+                io.BytesIO(
+                    file_bytes
+                )
+            )
+
+        except Exception as e:
+
+            st.error(
+                f"Could not read the REDCap CSV: {e}"
+            )
+
+            evaluation_df = None
+
+
+        if evaluation_df is not None:
+
+            # =================================================
+            # VALIDATE REQUIRED FIELDS
+            # =================================================
+
+            required_columns = {
+                "presenter",
+                "title"
+            }
+
+            missing_columns = (
+                required_columns
+                - set(
+                    evaluation_df.columns
+                )
+            )
+
+
+            if missing_columns:
+
+                st.error(
+                    "The REDCap export is missing required "
+                    "column(s): "
+                    + ", ".join(
+                        sorted(
+                            missing_columns
+                        )
+                    )
+                )
+
+            else:
+
+                # =============================================
+                # COMPLETED EVALUATIONS ONLY
+                # =============================================
+
+                if (
+                    "form_1_complete"
+                    in evaluation_df.columns
+                ):
+
+                    evaluation_df[
+                        "form_1_complete"
+                    ] = pd.to_numeric(
+                        evaluation_df[
+                            "form_1_complete"
+                        ],
+                        errors="coerce"
+                    )
+
+                    original_count = len(
+                        evaluation_df
+                    )
+
+                    evaluation_df = (
+                        evaluation_df[
+                            evaluation_df[
+                                "form_1_complete"
+                            ] == 2
+                        ]
+                        .copy()
+                    )
+
+                    removed_count = (
+                        original_count
+                        - len(
+                            evaluation_df
+                        )
+                    )
+
+
+                    if removed_count > 0:
+
+                        st.caption(
+                            f"{removed_count} incomplete or "
+                            "unverified evaluation(s) excluded."
+                        )
+
+
+                # =============================================
+                # CLEAN PRESENTER NAMES
+                # =============================================
+
+                evaluation_df = evaluation_df[
+                    evaluation_df[
+                        "presenter"
+                    ].notna()
+                ].copy()
+
+
+                evaluation_df[
+                    "presenter"
+                ] = (
+                    evaluation_df[
+                        "presenter"
+                    ]
+                    .astype(str)
+                    .str.strip()
+                )
+
+
+                evaluation_df = evaluation_df[
+                    evaluation_df[
+                        "presenter"
+                    ] != ""
+                ].copy()
+
+
+                # =============================================
+                # DETECT RATING QUESTIONS
+                # =============================================
+
+                detected_questions = sorted(
+                    [
+                        col
+                        for col in evaluation_df.columns
+                        if re.fullmatch(
+                            r"q\d+",
+                            str(col)
+                        )
+                    ],
+                    key=numeric_field_sort
+                )
+
+
+                # =============================================
+                # DETECT COMMENT FIELDS
+                # =============================================
+
+                detected_comments = sorted(
+                    [
+                        col
+                        for col in evaluation_df.columns
+                        if re.fullmatch(
+                            r"session_c\d+",
+                            str(col)
+                        )
+                    ],
+                    key=numeric_field_sort
+                )
+
+
+                # =============================================
+                # UPLOAD SUMMARY
+                # =============================================
+
+                presenter_list = sorted(
+                    evaluation_df[
+                        "presenter"
+                    ]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+
+
+                col1, col2, col3 = st.columns(
+                    3
+                )
+
+                col1.metric(
+                    "Presenters",
+                    len(
+                        presenter_list
+                    )
+                )
+
+                col2.metric(
+                    "Completed Evaluations",
+                    len(
+                        evaluation_df
+                    )
+                )
+
+                col3.metric(
+                    "Rating Questions",
+                    len(
+                        detected_questions
+                    )
+                )
+
+
+                # =============================================
+                # QUESTION LABEL EDITOR
+                # =============================================
+
+                st.subheader(
+                    "Evaluation Questions"
+                )
+
+                st.caption(
+                    "The REDCap variable names are detected "
+                    "automatically. Edit the question wording "
+                    "below whenever your survey changes."
+                )
+
+
+                if detected_questions:
+
+                    question_config = pd.DataFrame(
+                        {
+                            "Include": [
+                                True
+                                for _ in detected_questions
+                            ],
+
+                            "REDCap Field":
+                                detected_questions,
+
+                            "Question / Evaluation Item":
+                                [
+                                    DEFAULT_QUESTION_LABELS.get(
+                                        field,
+                                        field
+                                    )
+                                    for field
+                                    in detected_questions
+                                ],
+                        }
+                    )
+
+
+                    edited_question_config = st.data_editor(
+                        question_config,
+                        hide_index=True,
+                        use_container_width=True,
+                        disabled=[
+                            "REDCap Field"
+                        ],
+                        key=(
+                            "feedback_summary_"
+                            "question_editor"
+                        )
+                    )
+
+
+                    included_question_rows = (
+                        edited_question_config[
+                            edited_question_config[
+                                "Include"
+                            ] == True
+                        ]
+                    )
+
+
+                    question_columns = (
+                        included_question_rows[
+                            "REDCap Field"
+                        ]
+                        .tolist()
+                    )
+
+
+                    question_labels = dict(
+                        zip(
+                            included_question_rows[
+                                "REDCap Field"
+                            ],
+
+                            included_question_rows[
+                                "Question / Evaluation Item"
+                            ]
+                        )
+                    )
+
+                else:
+
+                    question_columns = []
+                    question_labels = {}
+
+                    st.warning(
+                        "No q### rating fields were detected."
+                    )
+
+
+                # =============================================
+                # COMMENT LABEL EDITOR
+                # =============================================
+
+                st.subheader(
+                    "Narrative Comment Questions"
+                )
+
+
+                if detected_comments:
+
+                    comment_config = pd.DataFrame(
+                        {
+                            "Include": [
+                                True
+                                for _ in detected_comments
+                            ],
+
+                            "REDCap Field":
+                                detected_comments,
+
+                            "Comment Prompt":
+                                [
+                                    DEFAULT_COMMENT_LABELS.get(
+                                        field,
+                                        field
+                                    )
+                                    for field
+                                    in detected_comments
+                                ],
+                        }
+                    )
+
+
+                    edited_comment_config = st.data_editor(
+                        comment_config,
+                        hide_index=True,
+                        use_container_width=True,
+                        disabled=[
+                            "REDCap Field"
+                        ],
+                        key=(
+                            "feedback_summary_"
+                            "comment_editor"
+                        )
+                    )
+
+
+                    included_comment_rows = (
+                        edited_comment_config[
+                            edited_comment_config[
+                                "Include"
+                            ] == True
+                        ]
+                    )
+
+
+                    comment_columns = (
+                        included_comment_rows[
+                            "REDCap Field"
+                        ]
+                        .tolist()
+                    )
+
+
+                    comment_labels = dict(
+                        zip(
+                            included_comment_rows[
+                                "REDCap Field"
+                            ],
+
+                            included_comment_rows[
+                                "Comment Prompt"
+                            ]
+                        )
+                    )
+
+                else:
+
+                    comment_columns = []
+                    comment_labels = {}
+
+                    st.info(
+                        "No narrative comment fields "
+                        "were detected."
+                    )
+
+
+                # =============================================
+                # SELECT PRESENTERS
+                # =============================================
+
+                st.subheader(
+                    "Presenters"
+                )
+
+
+                presenters_to_generate = st.multiselect(
+                    "Presenters to include",
+                    options=presenter_list,
+                    default=presenter_list,
+                    key=(
+                        "feedback_summary_"
+                        "presenter_selection"
+                    )
+                )
+
+
+                # =============================================
+                # OPTIONAL COMMENT SUMMARIES
+                # =============================================
+
+                custom_comment_summaries = {}
+
+
+                if presenters_to_generate:
+
+                    with st.expander(
+                        "✏️ Optional Narrative Comment Summaries"
+                    ):
+
+                        st.caption(
+                            "Optional. Leave these blank and "
+                            "the report will automatically state "
+                            "how many evaluations contained written "
+                            "feedback and how many comments were "
+                            "submitted. You can also type a brief "
+                            "promotion-ready thematic summary here."
+                        )
+
+
+                        for person in presenters_to_generate:
+
+                            custom_comment_summaries[
+                                person
+                            ] = st.text_area(
+                                f"{person}",
+                                value="",
+                                placeholder=(
+                                    "Optional summary of recurring "
+                                    "strengths, themes, or suggestions..."
+                                ),
+                                key=(
+                                    "feedback_comment_summary_"
+                                    + safe_filename(
+                                        person
+                                    )
+                                )
+                            )
+
+
+                # =============================================
+                # GENERATE WORD DOCUMENTS
+                # =============================================
+
+                if st.button(
+                    "📄 Create Presenter Word Summaries",
+                    type="primary",
+                    use_container_width=True,
+                    key=(
+                        "create_session_feedback_"
+                        "summary_reports"
+                    )
+                ):
+
+                    if not presenters_to_generate:
+
+                        st.warning(
+                            "Select at least one presenter."
+                        )
+
+                    else:
+
+                        generated_reports = {}
+
+
+                        for presenter_name in (
+                            presenters_to_generate
+                        ):
+
+                            report_bytes = (
+                                create_presenter_word_report(
+                                    evaluation_df=(
+                                        evaluation_df
+                                    ),
+
+                                    presenter_name=(
+                                        presenter_name
+                                    ),
+
+                                    question_columns=(
+                                        question_columns
+                                    ),
+
+                                    question_labels=(
+                                        question_labels
+                                    ),
+
+                                    comment_columns=(
+                                        comment_columns
+                                    ),
+
+                                    comment_labels=(
+                                        comment_labels
+                                    ),
+
+                                    custom_comment_summary=(
+                                        custom_comment_summaries
+                                        .get(
+                                            presenter_name,
+                                            ""
+                                        )
+                                    ),
+                                )
+                            )
+
+
+                            filename = (
+                                safe_filename(
+                                    presenter_name
+                                )
+                                + "_Teaching_Evaluation_"
+                                + "Summary.docx"
+                            )
+
+
+                            generated_reports[
+                                presenter_name
+                            ] = {
+                                "filename":
+                                    filename,
+
+                                "bytes":
+                                    report_bytes,
+                            }
+
+
+                        # =====================================
+                        # ZIP ALL REPORTS
+                        # =====================================
+
+                        zip_buffer = io.BytesIO()
+
+
+                        with zipfile.ZipFile(
+                            zip_buffer,
+                            mode="w",
+                            compression=(
+                                zipfile.ZIP_DEFLATED
+                            )
+                        ) as zip_file:
+
+                            for report_data in (
+                                generated_reports.values()
+                            ):
+
+                                zip_file.writestr(
+                                    report_data[
+                                        "filename"
+                                    ],
+                                    report_data[
+                                        "bytes"
+                                    ]
+                                )
+
+
+                        zip_buffer.seek(0)
+
+
+                        st.session_state[
+                            "feedback_summary_reports"
+                        ] = generated_reports
+
+                        st.session_state[
+                            "feedback_summary_zip"
+                        ] = zip_buffer.getvalue()
+
+
+                # =============================================
+                # DOWNLOAD REPORTS
+                # =============================================
+
+                if (
+                    "feedback_summary_reports"
+                    in st.session_state
+                ):
+
+                    reports = st.session_state[
+                        "feedback_summary_reports"
+                    ]
+
+
+                    st.success(
+                        f"Created {len(reports)} "
+                        "presenter Word summary file(s)."
+                    )
+
+
+                    for (
+                        presenter_name,
+                        report_data
+                    ) in reports.items():
+
+                        st.download_button(
+                            label=(
+                                "⬇️ Download "
+                                f"{presenter_name}"
+                            ),
+
+                            data=(
+                                report_data[
+                                    "bytes"
+                                ]
+                            ),
+
+                            file_name=(
+                                report_data[
+                                    "filename"
+                                ]
+                            ),
+
+                            mime=(
+                                "application/"
+                                "vnd.openxmlformats-officedocument."
+                                "wordprocessingml.document"
+                            ),
+
+                            use_container_width=True,
+
+                            key=(
+                                "download_feedback_summary_"
+                                + safe_filename(
+                                    presenter_name
+                                )
+                            )
+                        )
+
+
+                    # =========================================
+                    # DOWNLOAD ZIP
+                    # =========================================
+
+                    if len(reports) > 1:
+
+                        st.download_button(
+                            "📦 Download All Presenter Summaries",
+                            data=(
+                                st.session_state[
+                                    "feedback_summary_zip"
+                                ]
+                            ),
+                            file_name=(
+                                "Presenter_Teaching_"
+                                "Evaluation_Summaries.zip"
+                            ),
+                            mime="application/zip",
+                            use_container_width=True,
+                            key=(
+                                "download_all_"
+                                "feedback_summaries"
+                            )
+                        )
+
+
+
