@@ -2130,7 +2130,13 @@ elif instrument == "Session Feedback Link Creator":
 
             return False
 
-
+    # =========================================================
+    # LOAD SAVED PRESENTERS / SESSIONS
+    # =========================================================
+    
+    # First load the data from GitHub
+    saved_sessions = load_saved_sessions()
+    
     # =========================================================
     # CLEAN / NORMALIZE SAVED DATA
     # =========================================================
