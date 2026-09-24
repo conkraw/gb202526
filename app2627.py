@@ -2203,7 +2203,15 @@ elif instrument == "Session Feedback Link Creator":
 
         presenter = selected_presenter
 
-
+    # ---------------------------------------------------------
+    # USERNAME
+    # ---------------------------------------------------------
+    
+    username = st.text_input(
+        "Username",
+        value="",
+        placeholder="Enter presenter username"
+    )
     # ---------------------------------------------------------
     # SESSION TITLE
     # ---------------------------------------------------------
@@ -2350,9 +2358,10 @@ elif instrument == "Session Feedback Link Creator":
     # CREATE FEEDBACK LINK
     # =========================================================
 
-    if presenter.strip() and session_title.strip():
+    if (username.strip() and presenter.strip() and session_title.strip()):
 
         params = {
+            "username": username.strip(),
             "presenter": presenter.strip(),
             "title": session_title.strip(),
         }
@@ -2611,9 +2620,10 @@ elif instrument == "Session Feedback Link Creator":
 
     else:
 
+
         st.info(
-            "Select or enter a presenter and session title "
-            "to create the feedback link."
+            "Enter a username and select or enter a presenter "
+            "and session title to create the feedback link."
         )
 
 
