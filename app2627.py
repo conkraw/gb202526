@@ -2815,19 +2815,19 @@ elif instrument == "Session Feedback Summary Creator":
     # =========================================================
 
     DEFAULT_QUESTION_LABELS = {
-        "q001": "Question 1",
-        "q002": "Question 2",
-        "q003": "Question 3",
-        "q004": "Question 4",
-        "q005": "Question 5",
-        "q006": "Question 6",
-        "q007": "Question 7",
-        "q008": "Question 8",
+        "q001": "The presenter was well-prepared for this session.",
+        "q002": "The presenter created an environment that encouraged me to participate and ask questions.",
+        "q003": "I gained knowledge or skills from this session that I expect to use in future clinical encounters.",
+        "q004": "The cases or examples used by the presenter enhanced my understanding of the material.",
+        "q005": "This presenter modeled effective clinical reasoning to help me develop my own clinical reasoning.",
+        "q006": "This presenter contributed meaningfully to my learning during the pediatric clerkship.",
+        "q007": "This presenter was an effective educator during my time in the pediatric clerkship.",
+        "q008": "Overall, I found this teaching session valuable to my learning.",
     }
 
     DEFAULT_COMMENT_LABELS = {
-        "session_c001": "Comment Question 1",
-        "session_c002": "Comment Question 2",
+        "session_c001": "What is one aspect of the session that contributed most to your learning?",
+        "session_c002": "What suggestions would you offer to further enhance the teaching session?",
     }
 
 
