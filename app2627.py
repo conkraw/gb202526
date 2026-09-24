@@ -1868,31 +1868,387 @@ elif instrument == "Session Feedback Link Creator":
     st.header("📋 Session Feedback Link Creator")
 
     import io
+    import json
+    import base64
     import urllib.parse
+    import requests
     import qrcode
+
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.utils import ImageReader
 
-    # ---------------------------------------------------------
-    # REDCap base survey URL
-    # ---------------------------------------------------------
-    BASE_SURVEY_URL = "https://redcap.ctsi.psu.edu/surveys/?s=3HLWTMYWDF33479A"
 
-    # ---------------------------------------------------------
-    # Session Information
-    # ---------------------------------------------------------
+    # =========================================================
+    # SETTINGS
+    # =========================================================
+
+    BASE_SURVEY_URL = (
+        "https://redcap.ctsi.psu.edu/surveys/"
+        "?s=3HLWTMYWDF33479A"
+    )
+
+    GITHUB_DATA_FILE = "data/session_feedback_options.json"
+
+    DEFAULT_SESSIONS = {
+        "Conrad Krawiec": [
+            "Residency Journal Club"
+        ]
+    }
+
+    OTHER_OPTION = "➕ Other / enter manually"
+
+
+    # =========================================================
+    # GITHUB SETTINGS
+    # =========================================================
+
+    try:
+        GITHUB_TOKEN = st.secrets["github"]["token"]
+        GITHUB_REPO = st.secrets["github"]["repo"]
+        GITHUB_BRANCH = st.secrets["github"].get("branch", "main")
+
+        github_configured = True
+
+    except Exception:
+        GITHUB_TOKEN = ""
+        GITHUB_REPO = ""
+        GITHUB_BRANCH = "main"
+
+        github_configured = False
+
+
+    # =========================================================
+    # GITHUB HELPER FUNCTIONS
+    # =========================================================
+
+    def github_headers():
+        return {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+
+    def github_file_url(file_path):
+        encoded_path = urllib.parse.quote(
+            file_path,
+            safe="/"
+        )
+
+        return (
+            f"https://api.github.com/repos/"
+            f"{GITHUB_REPO}/contents/{encoded_path}"
+        )
+
+
+    def load_saved_sessions():
+        """
+        Load presenter/session data from GitHub.
+
+        If the file does not exist yet, create it using
+        DEFAULT_SESSIONS.
+        """
+
+        if not github_configured:
+            return DEFAULT_SESSIONS.copy()
+
+        url = github_file_url(GITHUB_DATA_FILE)
+
+        try:
+            response = requests.get(
+                url,
+                headers=github_headers(),
+                params={"ref": GITHUB_BRANCH},
+                timeout=15,
+            )
+
+            # File exists
+            if response.status_code == 200:
+
+                file_info = response.json()
+
+                encoded_content = file_info.get(
+                    "content",
+                    ""
+                )
+
+                decoded_content = base64.b64decode(
+                    encoded_content
+                ).decode("utf-8")
+
+                data = json.loads(decoded_content)
+
+                if isinstance(data, dict):
+                    return data
+
+                return DEFAULT_SESSIONS.copy()
+
+            # File does not exist yet
+            elif response.status_code == 404:
+
+                save_saved_sessions(
+                    DEFAULT_SESSIONS,
+                    commit_message=(
+                        "Create session feedback options"
+                    )
+                )
+
+                return DEFAULT_SESSIONS.copy()
+
+            else:
+                st.warning(
+                    "Could not load saved presenters from "
+                    f"GitHub. HTTP {response.status_code}"
+                )
+
+                return DEFAULT_SESSIONS.copy()
+
+        except Exception as e:
+
+            st.warning(
+                "Could not load saved presenters. "
+                f"Using defaults instead. {e}"
+            )
+
+            return DEFAULT_SESSIONS.copy()
+
+
+    def save_saved_sessions(
+        data,
+        commit_message="Update session feedback options"
+    ):
+        """
+        Create or update the JSON file in GitHub.
+        """
+
+        if not github_configured:
+            st.error(
+                "GitHub persistence is not configured. "
+                "Add the GitHub settings to Streamlit Secrets."
+            )
+            return False
+
+        url = github_file_url(GITHUB_DATA_FILE)
+
+        sha = None
+
+        try:
+            # ---------------------------------------------
+            # See if file already exists
+            # ---------------------------------------------
+            current_response = requests.get(
+                url,
+                headers=github_headers(),
+                params={"ref": GITHUB_BRANCH},
+                timeout=15,
+            )
+
+            if current_response.status_code == 200:
+                sha = current_response.json().get("sha")
+
+            elif current_response.status_code != 404:
+                st.error(
+                    "Could not check the existing GitHub file. "
+                    f"HTTP {current_response.status_code}"
+                )
+                return False
+
+            # ---------------------------------------------
+            # Convert data to JSON
+            # ---------------------------------------------
+            json_text = json.dumps(
+                data,
+                indent=2,
+                ensure_ascii=False
+            )
+
+            encoded_content = base64.b64encode(
+                json_text.encode("utf-8")
+            ).decode("utf-8")
+
+            # ---------------------------------------------
+            # GitHub PUT payload
+            # ---------------------------------------------
+            payload = {
+                "message": commit_message,
+                "content": encoded_content,
+                "branch": GITHUB_BRANCH,
+            }
+
+            # Required when updating an existing file
+            if sha:
+                payload["sha"] = sha
+
+            response = requests.put(
+                url,
+                headers=github_headers(),
+                json=payload,
+                timeout=15,
+            )
+
+            if response.status_code in (200, 201):
+                return True
+
+            st.error(
+                "GitHub could not save the changes. "
+                f"HTTP {response.status_code}: "
+                f"{response.text}"
+            )
+
+            return False
+
+        except Exception as e:
+
+            st.error(
+                f"Unable to save to GitHub: {e}"
+            )
+
+            return False
+
+
+    # =========================================================
+    # LOAD SAVED PRESENTERS / SESSIONS
+    # =========================================================
+
+    saved_sessions = load_saved_sessions()
+
+    # Clean / sort loaded values
+    cleaned_sessions = {}
+
+    for person, titles in saved_sessions.items():
+
+        person = str(person).strip()
+
+        if not person:
+            continue
+
+        if not isinstance(titles, list):
+            titles = [titles]
+
+        cleaned_titles = sorted(
+            {
+                str(title).strip()
+                for title in titles
+                if str(title).strip()
+            }
+        )
+
+        cleaned_sessions[person] = cleaned_titles
+
+    saved_sessions = cleaned_sessions
+
+
+    # =========================================================
+    # SESSION INFORMATION
+    # =========================================================
+
     st.subheader("Session Information")
 
-    presenter = st.text_input(
-        "Presenter",
-        value="Conrad Krawiec"
+
+    # ---------------------------------------------------------
+    # PRESENTER
+    # ---------------------------------------------------------
+
+    presenter_options = (
+        sorted(saved_sessions.keys())
+        + [OTHER_OPTION]
     )
 
-    session_title = st.text_input(
-        "Session Title",
-        value="Residency Journal Club"
+    selected_presenter = st.selectbox(
+        "Presenter",
+        options=presenter_options,
+        index=None,
+        placeholder="Select presenter..."
     )
+
+    presenter = ""
+
+    manual_presenter = False
+
+
+    if selected_presenter == OTHER_OPTION:
+
+        manual_presenter = True
+
+        presenter = st.text_input(
+            "Presenter name",
+            value="",
+            placeholder="Enter presenter name",
+            key="manual_feedback_presenter"
+        )
+
+    elif selected_presenter:
+
+        presenter = selected_presenter
+
+
+    # ---------------------------------------------------------
+    # SESSION TITLE
+    # ---------------------------------------------------------
+
+    session_title = ""
+    manual_title = False
+
+
+    if presenter:
+
+        # Existing presenter
+        if presenter in saved_sessions:
+
+            title_options = (
+                sorted(saved_sessions[presenter])
+                + [OTHER_OPTION]
+            )
+
+            selected_title = st.selectbox(
+                "Session Title",
+                options=title_options,
+                index=None,
+                placeholder="Select session title..."
+            )
+
+            if selected_title == OTHER_OPTION:
+
+                manual_title = True
+
+                session_title = st.text_input(
+                    "Session title",
+                    value="",
+                    placeholder="Enter session title",
+                    key="manual_feedback_title"
+                )
+
+            elif selected_title:
+
+                session_title = selected_title
+
+        # Completely new presenter
+        else:
+
+            manual_title = True
+
+            session_title = st.text_input(
+                "Session Title",
+                value="",
+                placeholder="Enter session title",
+                key="new_presenter_session_title"
+            )
+
+    else:
+
+        st.selectbox(
+            "Session Title",
+            options=[],
+            index=None,
+            placeholder="Select a presenter first...",
+            disabled=True
+        )
+
+
+    # ---------------------------------------------------------
+    # DATE
+    # ---------------------------------------------------------
 
     session_date = st.text_input(
         "Session Date",
@@ -1900,193 +2256,512 @@ elif instrument == "Session Feedback Link Creator":
         placeholder="Optional"
     )
 
-    # ---------------------------------------------------------
-    # Build REDCap Link
-    # ---------------------------------------------------------
-    params = {}
 
-    if presenter.strip():
-        params["presenter"] = presenter.strip()
+    # =========================================================
+    # SAVE NEW PRESENTER / TITLE
+    # =========================================================
 
-    if session_title.strip():
-        params["title"] = session_title.strip()
-
-    if session_date.strip():
-        params["date"] = session_date.strip()
-
-    encoded_params = urllib.parse.urlencode(params)
-
-    feedback_url = BASE_SURVEY_URL
-
-    if encoded_params:
-        feedback_url += "&" + encoded_params
-
-    # ---------------------------------------------------------
-    # Create QR Code
-    # ---------------------------------------------------------
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
-        border=4,
-    )
-
-    qr.add_data(feedback_url)
-    qr.make(fit=True)
-
-    qr_image = qr.make_image(
-        fill_color="black",
-        back_color="white"
-    )
-
-    qr_buffer = io.BytesIO()
-    qr_image.save(qr_buffer, format="PNG")
-    qr_buffer.seek(0)
-
-    # ---------------------------------------------------------
-    # Display Link + QR Code
-    # ---------------------------------------------------------
-    st.subheader("Student Feedback Link")
-
-    st.image(
-        qr_buffer.getvalue(),
-        width=300
-    )
-
-    st.markdown(
-        f"### [Open Session Feedback Survey]({feedback_url})"
-    )
-
-    #st.caption(feedback_url)
-
-    # ---------------------------------------------------------
-    # Create PDF
-    # ---------------------------------------------------------
-    def create_feedback_pdf(
-        presenter,
-        session_title,
-        session_date,
-        feedback_url,
-        qr_bytes
+    # Show save button whenever something was manually entered
+    if (
+        presenter.strip()
+        and session_title.strip()
+        and (manual_presenter or manual_title)
     ):
-        pdf_buffer = io.BytesIO()
 
-        c = canvas.Canvas(
-            pdf_buffer,
-            pagesize=letter
-        )
+        if st.button(
+            "💾 Save Presenter / Session for Future Use",
+            use_container_width=True,
+            key="save_feedback_presenter_session"
+        ):
 
-        page_width, page_height = letter
+            presenter_clean = presenter.strip()
+            title_clean = session_title.strip()
 
-        # Title
-        c.setFont("Helvetica-Bold", 22)
-        c.drawCentredString(
-            page_width / 2,
-            page_height - 90,
-            "Session Feedback"
-        )
+            # Reload before writing so we have the latest copy
+            latest_sessions = load_saved_sessions()
 
-        # Session title
-        c.setFont("Helvetica-Bold", 16)
-        c.drawCentredString(
-            page_width / 2,
-            page_height - 125,
-            session_title
-        )
+            if presenter_clean not in latest_sessions:
+                latest_sessions[presenter_clean] = []
 
-        # Presenter
-        c.setFont("Helvetica", 13)
-        c.drawCentredString(
-            page_width / 2,
-            page_height - 150,
-            presenter
-        )
+            existing_titles = latest_sessions[
+                presenter_clean
+            ]
 
-        # Date, if entered
-        if session_date.strip():
-            c.setFont("Helvetica", 12)
-            c.drawCentredString(
-                page_width / 2,
-                page_height - 172,
-                session_date
+            if title_clean not in existing_titles:
+                existing_titles.append(title_clean)
+
+            latest_sessions[presenter_clean] = sorted(
+                set(existing_titles)
             )
 
-        # Instructions
-        c.setFont("Helvetica", 13)
-        c.drawCentredString(
-            page_width / 2,
-            page_height - 215,
-            "Please scan the QR code to provide feedback."
+            success = save_saved_sessions(
+                latest_sessions,
+                commit_message=(
+                    f"Add session feedback option: "
+                    f"{presenter_clean} - {title_clean}"
+                )
+            )
+
+            if success:
+                st.success(
+                    f"Saved {presenter_clean} — "
+                    f"{title_clean}"
+                )
+
+                st.rerun()
+
+
+    # =========================================================
+    # CREATE FEEDBACK LINK
+    # =========================================================
+
+    if presenter.strip() and session_title.strip():
+
+        params = {
+            "presenter": presenter.strip(),
+            "title": session_title.strip(),
+        }
+
+        if session_date.strip():
+            params["date"] = session_date.strip()
+
+        encoded_params = urllib.parse.urlencode(params)
+
+        feedback_url = (
+            BASE_SURVEY_URL
+            + "&"
+            + encoded_params
         )
 
-        # QR code
-        qr_stream = io.BytesIO(qr_bytes)
-        qr_reader = ImageReader(qr_stream)
 
-        qr_size = 250
+        # =====================================================
+        # CREATE QR CODE
+        # =====================================================
 
-        c.drawImage(
-            qr_reader,
-            (page_width - qr_size) / 2,
-            page_height - 500,
-            width=qr_size,
-            height=qr_size,
-            preserveAspectRatio=True
-        )
-
-        # Clickable link
-        link_text = "Click here to open the feedback survey"
-
-        c.setFont("Helvetica-Bold", 12)
-
-        link_width = c.stringWidth(
-            link_text,
-            "Helvetica-Bold",
-            12
-        )
-
-        link_x = (page_width - link_width) / 2
-        link_y = page_height - 535
-
-        c.drawString(
-            link_x,
-            link_y,
-            link_text
-        )
-
-        # Make text clickable in PDF
-        c.linkURL(
-            feedback_url,
-            (
-                link_x,
-                link_y - 3,
-                link_x + link_width,
-                link_y + 12
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=(
+                qrcode.constants.ERROR_CORRECT_M
             ),
-            relative=0
+            box_size=10,
+            border=4,
         )
 
-        c.save()
+        qr.add_data(feedback_url)
+        qr.make(fit=True)
 
-        pdf_buffer.seek(0)
-        return pdf_buffer.getvalue()
+        qr_image = qr.make_image(
+            fill_color="black",
+            back_color="white"
+        )
 
-    pdf_bytes = create_feedback_pdf(
-        presenter,
-        session_title,
-        session_date,
-        feedback_url,
-        qr_buffer.getvalue()
-    )
+        qr_buffer = io.BytesIO()
 
-    # ---------------------------------------------------------
-    # Download PDF
-    # ---------------------------------------------------------
-    st.download_button(
-        "📄 Download Feedback QR PDF",
-        data=pdf_bytes,
-        file_name="session_feedback_qr.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+        qr_image.save(
+            qr_buffer,
+            format="PNG"
+        )
 
+        qr_buffer.seek(0)
+
+        qr_bytes = qr_buffer.getvalue()
+
+
+        # =====================================================
+        # DISPLAY LINK + QR CODE
+        # =====================================================
+
+        st.divider()
+
+        st.subheader("Student Feedback Link")
+
+        st.image(
+            qr_bytes,
+            width=300
+        )
+
+        st.markdown(
+            f"### [Open Session Feedback Survey]"
+            f"({feedback_url})"
+        )
+
+
+        # =====================================================
+        # CREATE PDF
+        # =====================================================
+
+        def create_feedback_pdf(
+            presenter,
+            session_title,
+            session_date,
+            feedback_url,
+            qr_bytes
+        ):
+
+            pdf_buffer = io.BytesIO()
+
+            c = canvas.Canvas(
+                pdf_buffer,
+                pagesize=letter
+            )
+
+            page_width, page_height = letter
+
+            # ---------------------------------------------
+            # Title
+            # ---------------------------------------------
+            c.setFont(
+                "Helvetica-Bold",
+                22
+            )
+
+            c.drawCentredString(
+                page_width / 2,
+                page_height - 90,
+                "Session Feedback"
+            )
+
+
+            # ---------------------------------------------
+            # Session title
+            # ---------------------------------------------
+            c.setFont(
+                "Helvetica-Bold",
+                16
+            )
+
+            c.drawCentredString(
+                page_width / 2,
+                page_height - 125,
+                session_title
+            )
+
+
+            # ---------------------------------------------
+            # Presenter
+            # ---------------------------------------------
+            c.setFont(
+                "Helvetica",
+                13
+            )
+
+            c.drawCentredString(
+                page_width / 2,
+                page_height - 150,
+                presenter
+            )
+
+
+            # ---------------------------------------------
+            # Date
+            # ---------------------------------------------
+            if session_date.strip():
+
+                c.setFont(
+                    "Helvetica",
+                    12
+                )
+
+                c.drawCentredString(
+                    page_width / 2,
+                    page_height - 172,
+                    session_date
+                )
+
+
+            # ---------------------------------------------
+            # Instructions
+            # ---------------------------------------------
+            c.setFont(
+                "Helvetica",
+                13
+            )
+
+            c.drawCentredString(
+                page_width / 2,
+                page_height - 215,
+                "Please scan the QR code to provide feedback."
+            )
+
+
+            # ---------------------------------------------
+            # QR code
+            # ---------------------------------------------
+            qr_stream = io.BytesIO(qr_bytes)
+
+            qr_reader = ImageReader(
+                qr_stream
+            )
+
+            qr_size = 250
+
+            c.drawImage(
+                qr_reader,
+                (page_width - qr_size) / 2,
+                page_height - 500,
+                width=qr_size,
+                height=qr_size,
+                preserveAspectRatio=True
+            )
+
+
+            # ---------------------------------------------
+            # Clickable PDF link
+            # ---------------------------------------------
+            link_text = (
+                "Click here to open the feedback survey"
+            )
+
+            c.setFont(
+                "Helvetica-Bold",
+                12
+            )
+
+            link_width = c.stringWidth(
+                link_text,
+                "Helvetica-Bold",
+                12
+            )
+
+            link_x = (
+                page_width - link_width
+            ) / 2
+
+            link_y = page_height - 535
+
+            c.drawString(
+                link_x,
+                link_y,
+                link_text
+            )
+
+            c.linkURL(
+                feedback_url,
+                (
+                    link_x,
+                    link_y - 3,
+                    link_x + link_width,
+                    link_y + 12
+                ),
+                relative=0
+            )
+
+            c.save()
+
+            pdf_buffer.seek(0)
+
+            return pdf_buffer.getvalue()
+
+
+        pdf_bytes = create_feedback_pdf(
+            presenter,
+            session_title,
+            session_date,
+            feedback_url,
+            qr_bytes
+        )
+
+
+        # =====================================================
+        # DOWNLOAD PDF
+        # =====================================================
+
+        st.download_button(
+            "📄 Download Feedback QR PDF",
+            data=pdf_bytes,
+            file_name="session_feedback_qr.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+    else:
+
+        st.info(
+            "Select or enter a presenter and session title "
+            "to create the feedback link."
+        )
+
+
+    # =========================================================
+    # MANAGE SAVED PRESENTERS
+    # =========================================================
+
+    with st.expander(
+        "⚙️ Manage Saved Presenters & Sessions"
+    ):
+
+        if not github_configured:
+
+            st.warning(
+                "GitHub persistence is not configured yet. "
+                "Add the [github] section to Streamlit Secrets."
+            )
+
+        elif not saved_sessions:
+
+            st.info(
+                "There are currently no saved presenters."
+            )
+
+        else:
+
+            st.write(
+                "Remove an individual session title or "
+                "remove a presenter and all of their "
+                "saved sessions."
+            )
+
+
+            # -------------------------------------------------
+            # Select presenter to manage
+            # -------------------------------------------------
+
+            manage_presenter = st.selectbox(
+                "Presenter to manage",
+                options=sorted(
+                    saved_sessions.keys()
+                ),
+                index=None,
+                placeholder="Select presenter...",
+                key="manage_feedback_presenter"
+            )
+
+
+            if manage_presenter:
+
+                presenter_titles = saved_sessions.get(
+                    manage_presenter,
+                    []
+                )
+
+
+                # =============================================
+                # REMOVE INDIVIDUAL SESSION
+                # =============================================
+
+                if presenter_titles:
+
+                    remove_title = st.selectbox(
+                        "Session title",
+                        options=presenter_titles,
+                        index=None,
+                        placeholder=(
+                            "Select session title..."
+                        ),
+                        key="remove_feedback_title"
+                    )
+
+                    if remove_title:
+
+                        if st.button(
+                            "🗑️ Remove This Session",
+                            use_container_width=True,
+                            key="remove_feedback_session"
+                        ):
+
+                            latest_sessions = (
+                                load_saved_sessions()
+                            )
+
+                            if (
+                                manage_presenter
+                                in latest_sessions
+                            ):
+
+                                latest_sessions[
+                                    manage_presenter
+                                ] = [
+                                    title
+                                    for title
+                                    in latest_sessions[
+                                        manage_presenter
+                                    ]
+                                    if title != remove_title
+                                ]
+
+                                # If no titles remain,
+                                # remove presenter
+                                if not latest_sessions[
+                                    manage_presenter
+                                ]:
+                                    del latest_sessions[
+                                        manage_presenter
+                                    ]
+
+                            success = save_saved_sessions(
+                                latest_sessions,
+                                commit_message=(
+                                    "Remove session feedback "
+                                    f"option: "
+                                    f"{manage_presenter} - "
+                                    f"{remove_title}"
+                                )
+                            )
+
+                            if success:
+
+                                st.success(
+                                    "Session removed."
+                                )
+
+                                st.rerun()
+
+
+                # =============================================
+                # REMOVE ENTIRE PRESENTER
+                # =============================================
+
+                st.divider()
+
+                remove_entire_presenter = (
+                    st.checkbox(
+                        f"Remove {manage_presenter} "
+                        "and all saved session titles",
+                        key=(
+                            "confirm_remove_"
+                            "feedback_presenter"
+                        )
+                    )
+                )
+
+                if remove_entire_presenter:
+
+                    if st.button(
+                        "🗑️ Remove Presenter",
+                        type="primary",
+                        use_container_width=True,
+                        key=(
+                            "remove_entire_"
+                            "feedback_presenter"
+                        )
+                    ):
+
+                        latest_sessions = (
+                            load_saved_sessions()
+                        )
+
+                        if (
+                            manage_presenter
+                            in latest_sessions
+                        ):
+
+                            del latest_sessions[
+                                manage_presenter
+                            ]
+
+                        success = save_saved_sessions(
+                            latest_sessions,
+                            commit_message=(
+                                "Remove session feedback "
+                                f"presenter: "
+                                f"{manage_presenter}"
+                            )
+                        )
+
+                        if success:
+
+                            st.success(
+                                f"{manage_presenter} removed."
+                            )
+
+                            st.rerun()
