@@ -2258,11 +2258,11 @@ elif instrument == "Session Feedback Link Creator":
     
     # REDCap requires M-D-Y with hyphens
     date_for_redcap = (
-        session_date.strftime("%m-%d-%Y")
+        session_date.strftime("%Y-%m-%d")
         if session_date
         else ""
     )
-    
+        
     # Friendly date for the PDF
     session_date_display = (
         session_date.strftime("%m/%d/%Y")
