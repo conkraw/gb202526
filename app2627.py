@@ -3168,7 +3168,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
     # =========================================================
-    # SESSION SUMMARY TABLE
+    # INDIVIDUAL SESSION SUMMARY TABLE
     # =========================================================
 
     def create_session_summary(
@@ -3178,9 +3178,17 @@ elif instrument == "Session Feedback Summary Creator":
 
         summary_rows = []
 
+        # -----------------------------------------------------
+        # Each unique date + title = one individual session
+        #
+        # Multiple learner evaluations from that session
+        # are grouped together into the same row.
+        # -----------------------------------------------------
+
         grouped = presenter_df.groupby(
             [
                 "_academic_year",
+                "_session_day",
                 "_title"
             ],
             dropna=False
@@ -3189,13 +3197,14 @@ elif instrument == "Session Feedback Summary Creator":
 
         for (
             academic_year,
+            session_day,
             session_title
         ), group in grouped:
 
-            # ---------------------------------------------
-            # Mean of all available 1-5 question responses
-            # for this academic year/session title
-            # ---------------------------------------------
+
+            # -------------------------------------------------
+            # Average rating for THIS individual session
+            # -------------------------------------------------
 
             if question_columns:
 
@@ -3225,15 +3234,58 @@ elif instrument == "Session Feedback Summary Creator":
                 rating_average = None
 
 
-            sessions_delivered = (
-                group[
-                    "_session_key"
-                ].nunique()
-            )
+            # -------------------------------------------------
+            # Number of evaluations submitted for this session
+            # -------------------------------------------------
 
             number_evaluations = len(
                 group
             )
+
+
+            # -------------------------------------------------
+            # Participant number
+            #
+            # par_number should normally be identical on every
+            # evaluation from the same session.
+            #
+            # Use the first valid value.
+            # -------------------------------------------------
+
+            participant_number = None
+
+            if "par_number" in group.columns:
+
+                participant_values = pd.to_numeric(
+                    group["par_number"],
+                    errors="coerce"
+                ).dropna()
+
+                if len(participant_values) > 0:
+
+                    participant_number = int(
+                        participant_values.iloc[0]
+                    )
+
+
+            # -------------------------------------------------
+            # Friendly date
+            # -------------------------------------------------
+
+            parsed_date = pd.to_datetime(
+                session_day,
+                errors="coerce"
+            )
+
+            if pd.isna(parsed_date):
+
+                display_date = ""
+
+            else:
+
+                display_date = parsed_date.strftime(
+                    "%m/%d/%Y"
+                )
 
 
             summary_rows.append(
@@ -3241,11 +3293,14 @@ elif instrument == "Session Feedback Summary Creator":
                     "Academic Year":
                         academic_year,
 
+                    "Session Date":
+                        display_date,
+
                     "Session Title":
                         session_title,
 
-                    "Sessions Delivered":
-                        sessions_delivered,
+                    "Participants":
+                        participant_number,
 
                     "Rating Average":
                         rating_average,
@@ -3261,41 +3316,34 @@ elif instrument == "Session Feedback Summary Creator":
         )
 
 
+        # -----------------------------------------------------
+        # Sort newest sessions first
+        # -----------------------------------------------------
+
         if not summary_df.empty:
 
             summary_df[
-                "_sort_year"
-            ] = summary_df[
-                "Academic Year"
-            ].apply(
-                lambda x:
-                    int(
-                        str(x).split("-")[0]
-                    )
-                    if str(x).split("-")[0].isdigit()
-                    else 0
+                "_sort_date"
+            ] = pd.to_datetime(
+                summary_df[
+                    "Session Date"
+                ],
+                errors="coerce"
             )
 
             summary_df = summary_df.sort_values(
-                [
-                    "_sort_year",
-                    "Session Title"
-                ],
-                ascending=[
-                    False,
-                    True
-                ]
+                "_sort_date",
+                ascending=False
             )
 
             summary_df = summary_df.drop(
                 columns=[
-                    "_sort_year"
+                    "_sort_date"
                 ]
             )
 
 
         return summary_df
-
 
     # =========================================================
     # CREATE WORD DOCUMENT
@@ -3359,12 +3407,6 @@ elif instrument == "Session Feedback Summary Creator":
             overall_rating = None
             overall_rating_text = "N/A"
 
-
-        total_sessions = (
-            presenter_df[
-                "_session_key"
-            ].nunique()
-        )
 
         total_evaluations = len(
             presenter_df
@@ -3544,8 +3586,6 @@ elif instrument == "Session Feedback Summary Creator":
         )
 
         run = paragraph.add_run(
-            f"Sessions Delivered: {total_sessions}"
-            f"    |    "
             f"Completed Evaluations: {total_evaluations}"
             f"    |    "
             f"Overall Rating: {overall_rating_text}"
@@ -3567,7 +3607,7 @@ elif instrument == "Session Feedback Summary Creator":
 
         activity_table = document.add_table(
             rows=1,
-            cols=5
+            cols=6
         )
 
         activity_table.style = "Table Grid"
@@ -3581,12 +3621,12 @@ elif instrument == "Session Feedback Summary Creator":
 
         activity_headers = [
             "Academic Year",
+            "Session Date",
             "Session Title",
-            "Sessions\nDelivered",
+            "Participants",
             "Rating Average\nLow 1 - High 5",
             "Number of\nEvaluations",
         ]
-
 
         for index, header in enumerate(
             activity_headers
@@ -3613,10 +3653,13 @@ elif instrument == "Session Feedback Summary Creator":
             cells = activity_table.add_row().cells
 
 
+            # ---------------------------------------------
+            # Rating
+            # ---------------------------------------------
+
             rating = row[
                 "Rating Average"
             ]
-
 
             if pd.isna(rating):
 
@@ -3629,20 +3672,43 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
+            # ---------------------------------------------
+            # Participants
+            # ---------------------------------------------
+
+            participants = row[
+                "Participants"
+            ]
+
+            if pd.isna(participants):
+
+                participant_text = ""
+
+            else:
+
+                participant_text = str(
+                    int(participants)
+                )
+
+
+            # ---------------------------------------------
+            # Row values
+            # ---------------------------------------------
+
             values = [
                 row[
                     "Academic Year"
                 ],
 
                 row[
+                    "Session Date"
+                ],
+
+                row[
                     "Session Title"
                 ],
 
-                int(
-                    row[
-                        "Sessions Delivered"
-                    ]
-                ),
+                participant_text,
 
                 rating_text,
 
@@ -3664,7 +3730,7 @@ elif instrument == "Session Feedback Summary Creator":
                     size=8,
                     alignment=(
                         "left"
-                        if index == 1
+                        if index == 2
                         else "center"
                     )
                 )
@@ -4159,7 +4225,9 @@ elif instrument == "Session Feedback Summary Creator":
 
             required_columns = {
                 "presenter",
-                "title"
+                "title",
+                "date",
+                "par_number"
             }
 
             missing_columns = (
