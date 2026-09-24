@@ -13,9 +13,29 @@ from typing import Iterable
 from urllib.parse import quote_plus
 
 
-st.set_page_config(page_title="REDCap Formatter", layout="wide")
-st.title("🔄 REDCap Instruments Formatter")
-st.markdown("[Open REDCap Data Import](https://redcap.ctsi.psu.edu/redcap_v15.5.35/index.php?pid=19389&route=DataImportController:index)")
+st.set_page_config(
+    page_title="REDCap Formatter",
+    layout="wide"
+)
+
+# ---------------------------------------------------------
+# Hide general REDCap header for selected instruments
+# ---------------------------------------------------------
+
+HIDE_MAIN_HEADER_FOR = {
+    "Session Feedback Link Creator",
+    "Session Feedback Summary Creator",
+}
+
+if instrument not in HIDE_MAIN_HEADER_FOR:
+
+    st.title("🔄 REDCap Instruments Formatter")
+
+    st.markdown(
+        "[Open REDCap Data Import]"
+        "(https://redcap.ctsi.psu.edu/redcap_v15.5.35/index.php?"
+        "pid=19389&route=DataImportController:index)"
+    )
 
 
 # choose which instrument you want to format
