@@ -17,6 +17,8 @@ st.set_page_config(
     page_title="REDCap Formatter",
     layout="wide"
 )
+# choose which instrument you want to format
+instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater","Oasis Reminder","Session Feedback Link Creator","Session Feedback Summary Creator"])
 
 # ---------------------------------------------------------
 # Hide general REDCap header for selected instruments
@@ -38,8 +40,7 @@ if instrument not in HIDE_MAIN_HEADER_FOR:
     )
 
 
-# choose which instrument you want to format
-instrument = st.sidebar.selectbox("Select instrument", ["OASIS Evaluation", "Checklist Entry", "Preceptor Matching", "NBME Scores", "Roster_HMC", "Roster_KP", "Roster_Updater","Oasis Reminder","Session Feedback Link Creator","Session Feedback Summary Creator"])
+
 
 if instrument == "OASIS Evaluation":
     st.header("📋 OASIS Evaluation Formatter")
