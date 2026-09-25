@@ -11,3 +11,4 @@ canvas
 letter
 ImageReader
 reportlab
+cryptography
