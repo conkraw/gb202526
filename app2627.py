@@ -3731,2192 +3731,3045 @@ elif instrument == "Session Feedback Summary Creator":
     st.header("📋 Session Feedback Summary Creator")
 
     import io
-    import json
-    import base64
-    import urllib.parse
+    import re
+    import html
+    import zipfile
     import hashlib
-    import requests
-    import qrcode
+    import pandas as pd
 
-    from cryptography.fernet import Fernet, InvalidToken
-
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.utils import ImageReader
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import (
+        WD_TABLE_ALIGNMENT,
+        WD_CELL_VERTICAL_ALIGNMENT
+    )
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
 
     # =========================================================
-    # SETTINGS
+    # DEFAULT QUESTION / COMMENT LABELS
     # =========================================================
-
-    BASE_SURVEY_URL = (
-        "https://redcap.ctsi.psu.edu/surveys/"
-        "?s=3HLWTMYWDF33479A"
-    )
-
-    # ---------------------------------------------------------
-    # NEW encrypted file
-    # ---------------------------------------------------------
-
-    GITHUB_DATA_FILE = (
-        "data/session_feedback_options.enc"
-    )
-
-    # ---------------------------------------------------------
-    # OLD plaintext file
     #
-    # Used only for one-time migration if the encrypted file
-    # does not exist yet.
-    # ---------------------------------------------------------
-
-    LEGACY_GITHUB_DATA_FILE = (
-        "data/session_feedback_options.json"
-    )
-
-    OTHER_OPTION = (
-        "➕ Other / enter manually"
-    )
-
-
-    # =========================================================
-    # DEFAULT DATA
+    # Update these here if your REDCap questions change.
+    #
+    # These mappings are hidden during normal use.
+    # They can be viewed/edited under Troubleshooting.
     # =========================================================
 
-    DEFAULT_SESSIONS = {
+    DEFAULT_QUESTION_LABELS = {
+        "q001": "The presenter was well-prepared for this session.",
+        "q002": "The presenter created an environment that encouraged me to participate and ask questions.",
+        "q003": "I gained knowledge or skills from this session that I expect to use in future clinical encounters.",
+        "q004": "The cases or examples used by the presenter enhanced my understanding of the material.",
+        "q005": "This presenter modeled effective clinical reasoning to help me develop my own clinical reasoning.",
+        "q006": "This presenter contributed meaningfully to my learning during the pediatric clerkship.",
+        "q007": "This presenter was an effective educator during my time in the pediatric clerkship.",
+        "q008": "Overall, I found this teaching session valuable to my learning.",
+    }
 
-        "Conrad Krawiec": {
-
-            "username": "czk11",
-
-            "sessions": [
-                "Residency Journal Club"
-            ]
-        }
+    DEFAULT_COMMENT_LABELS = {
+        "session_c001": "What is one aspect of the session that contributed most to your learning?",
+        "session_c002": "What suggestions would you offer to further enhance the teaching session?",
     }
 
 
     # =========================================================
-    # STREAMLIT ENCRYPTION KEY
-    # =========================================================
-    #
-    # Streamlit Secrets:
-    #
-    # [feedback_encryption]
-    # key = "YOUR_FERNET_KEY"
-    #
+    # GENERAL HELPERS
     # =========================================================
 
-    try:
+    def get_academic_year(value):
+        """
+        Academic year begins July 1.
 
-        ENCRYPTION_KEY = str(
-            st.secrets[
-                "feedback_encryption"
-            ][
-                "key"
-            ]
-        ).strip()
+        Examples:
+        09/10/2026 -> 2026-2027
+        03/10/2027 -> 2026-2027
+        """
 
-
-        cipher = Fernet(
-            ENCRYPTION_KEY.encode(
-                "utf-8"
-            )
+        d = pd.to_datetime(
+            value,
+            errors="coerce"
         )
 
+        if pd.isna(d):
+            return "Unknown"
 
-    except Exception:
+        if d.month >= 7:
+            return f"{d.year}-{d.year + 1}"
 
-        st.error(
-            "Session Feedback encryption is not configured. "
-            "Add [feedback_encryption] and its key to "
-            "Streamlit Secrets."
+        return f"{d.year - 1}-{d.year}"
+
+
+    def clean_redcap_comment(value):
+        """
+        Remove REDCap HTML formatting from comments.
+        """
+
+        if pd.isna(value):
+            return ""
+
+        text = html.unescape(
+            str(value)
         )
 
-        st.stop()
+        text = re.sub(
+            r"<br\s*/?>",
+            "\n",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            r"</p\s*>",
+            "\n",
+            text,
+            flags=re.IGNORECASE
+        )
+
+        text = re.sub(
+            r"<[^>]+>",
+            "",
+            text
+        )
+
+        text = text.replace(
+            "\xa0",
+            " "
+        )
+
+        text = re.sub(
+            r"[ \t]+",
+            " ",
+            text
+        )
+
+        text = re.sub(
+            r"\n\s*\n+",
+            "\n",
+            text
+        )
+
+        return text.strip()
 
 
-    # =========================================================
-    # GITHUB SETTINGS
-    # =========================================================
-    #
-    # Streamlit Secrets:
-    #
-    # [github]
-    # token = "github_pat_..."
-    # repo = "username/repository"
-    # branch = "main"
-    #
-    # =========================================================
+    def safe_filename(value):
 
-    try:
+        value = re.sub(
+            r"[^A-Za-z0-9._ -]",
+            "",
+            str(value)
+        )
 
-        GITHUB_TOKEN = str(
-            st.secrets[
-                "github"
-            ][
-                "token"
-            ]
-        ).strip()
+        value = value.strip().replace(
+            " ",
+            "_"
+        )
+
+        return value or "Presenter"
 
 
-        GITHUB_REPO = str(
-            st.secrets[
-                "github"
-            ][
-                "repo"
-            ]
-        ).strip()
+    def numeric_field_sort(field_name):
+        """
+        Makes sure q001, q002 ... q010 stay
+        in numerical order.
+        """
 
+        match = re.search(
+            r"(\d+)$",
+            str(field_name)
+        )
 
-        GITHUB_BRANCH = str(
-            st.secrets[
-                "github"
-            ].get(
-                "branch",
-                "main"
+        if match:
+            return int(
+                match.group(1)
             )
-        ).strip()
 
-
-        github_configured = True
-
-
-    except Exception:
-
-        GITHUB_TOKEN = ""
-        GITHUB_REPO = ""
-        GITHUB_BRANCH = "main"
-
-        github_configured = False
+        return 9999
 
 
     # =========================================================
-    # SMALL HELPER FOR STREAMLIT WIDGET KEYS
+    # WORD FORMATTING HELPERS
     # =========================================================
 
-    def widget_suffix(value):
-
-        return hashlib.sha256(
-            str(value).encode(
-                "utf-8"
-            )
-        ).hexdigest()[:12]
-
-
-    # =========================================================
-    # NORMALIZE SAVED DATA
-    # =========================================================
-    #
-    # Supports BOTH:
-    #
-    # OLD FORMAT:
-    #
-    # "Conrad Krawiec": [
-    #     "Residency Journal Club"
-    # ]
-    #
-    # NEW FORMAT:
-    #
-    # "Conrad Krawiec": {
-    #     "username": "czk11",
-    #     "sessions": [
-    #         "Residency Journal Club"
-    #     ]
-    # }
-    #
-    # =========================================================
-
-    def normalize_saved_sessions(
-        data
+    def shade_cell(
+        cell,
+        fill="D9E1F2"
     ):
 
-        cleaned_sessions = {}
+        tc_pr = cell._tc.get_or_add_tcPr()
+
+        shading = tc_pr.find(
+            qn("w:shd")
+        )
+
+        if shading is None:
+
+            shading = OxmlElement(
+                "w:shd"
+            )
+
+            tc_pr.append(
+                shading
+            )
+
+        shading.set(
+            qn("w:fill"),
+            fill
+        )
 
 
-        if not isinstance(
-            data,
-            dict
+    def set_cell_text(
+        cell,
+        text,
+        bold=False,
+        size=9,
+        alignment="center"
+    ):
+
+        cell.text = ""
+
+        paragraph = cell.paragraphs[0]
+
+        if alignment == "left":
+
+            paragraph.alignment = (
+                WD_ALIGN_PARAGRAPH.LEFT
+            )
+
+        else:
+
+            paragraph.alignment = (
+                WD_ALIGN_PARAGRAPH.CENTER
+            )
+
+        paragraph.paragraph_format.space_after = Pt(
+            0
+        )
+
+        run = paragraph.add_run(
+            str(text)
+        )
+
+        run.bold = bold
+        run.font.name = "Arial"
+        run.font.size = Pt(
+            size
+        )
+
+        cell.vertical_alignment = (
+            WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        )
+
+
+    def add_section_heading(
+        document,
+        text
+    ):
+
+        paragraph = document.add_paragraph()
+
+        paragraph.paragraph_format.space_before = Pt(
+            8
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            3
+        )
+
+        run = paragraph.add_run(
+            text
+        )
+
+        run.bold = True
+        run.underline = True
+        run.font.name = "Arial"
+        run.font.size = Pt(
+            11
+        )
+
+
+    # =========================================================
+    # PREPARE ONE PRESENTER'S DATA
+    # =========================================================
+
+    def prepare_presenter_data(
+        evaluation_df,
+        presenter_name,
+        question_columns
+    ):
+
+        presenter_df = evaluation_df[
+            evaluation_df[
+                "presenter"
+            ]
+            .astype(str)
+            .str.strip()
+            == presenter_name
+        ].copy()
+
+
+        # -----------------------------------------------------
+        # Convert rating questions to numbers
+        # -----------------------------------------------------
+
+        for col in question_columns:
+
+            presenter_df[
+                col
+            ] = pd.to_numeric(
+                presenter_df[
+                    col
+                ],
+                errors="coerce"
+            )
+
+
+        # -----------------------------------------------------
+        # Session date
+        # -----------------------------------------------------
+
+        presenter_df[
+            "_session_date"
+        ] = pd.to_datetime(
+            presenter_df[
+                "date"
+            ],
+            errors="coerce"
+        )
+
+
+        # -----------------------------------------------------
+        # If date is missing, use REDCap timestamp
+        # -----------------------------------------------------
+
+        if (
+            "form_1_timestamp"
+            in presenter_df.columns
         ):
 
-            return cleaned_sessions
+            timestamp_date = pd.to_datetime(
+                presenter_df[
+                    "form_1_timestamp"
+                ],
+                errors="coerce"
+            )
+
+            presenter_df[
+                "_session_date"
+            ] = presenter_df[
+                "_session_date"
+            ].fillna(
+                timestamp_date
+            )
 
 
-        for person, info in (
-            data.items()
-        ):
+        # -----------------------------------------------------
+        # Academic year
+        # -----------------------------------------------------
 
-            person = str(
-                person
-            ).strip()
+        presenter_df[
+            "_academic_year"
+        ] = presenter_df[
+            "_session_date"
+        ].apply(
+            get_academic_year
+        )
 
 
-            if not person:
+        # -----------------------------------------------------
+        # Clean session title
+        # -----------------------------------------------------
 
-                continue
+        presenter_df[
+            "_title"
+        ] = (
+            presenter_df[
+                "title"
+            ]
+            .fillna(
+                "Untitled Session"
+            )
+            .astype(str)
+            .str.strip()
+        )
+
+        presenter_df.loc[
+            presenter_df[
+                "_title"
+            ] == "",
+            "_title"
+        ] = "Untitled Session"
+
+
+        # -----------------------------------------------------
+        # Session identifier
+        #
+        # Same presenter + same title + same date
+        # = one individual teaching session.
+        #
+        # Same title on DIFFERENT dates stays separate.
+        # -----------------------------------------------------
+
+        presenter_df[
+            "_session_day"
+        ] = presenter_df[
+            "_session_date"
+        ].dt.strftime(
+            "%Y-%m-%d"
+        )
+
+        presenter_df[
+            "_session_day"
+        ] = presenter_df[
+            "_session_day"
+        ].fillna(
+            "Unknown"
+        )
+
+        presenter_df[
+            "_session_key"
+        ] = (
+            presenter_df[
+                "_title"
+            ]
+            + "||"
+            + presenter_df[
+                "_session_day"
+            ]
+        )
+
+        return presenter_df
+
+
+    # =========================================================
+    # CREATE ONE ROW FOR EACH INDIVIDUAL SESSION
+    # =========================================================
+
+    def create_session_summary(
+        presenter_df,
+        question_columns
+    ):
+
+        summary_rows = []
+
+
+        grouped = presenter_df.groupby(
+            [
+                "_academic_year",
+                "_session_day",
+                "_title"
+            ],
+            dropna=False
+        )
+
+
+        for (
+            academic_year,
+            session_day,
+            session_title
+        ), group in grouped:
 
 
             # -------------------------------------------------
-            # OLD FORMAT
+            # SESSION RATING AVERAGE
+            #
+            # Average of all included 1-5 responses
+            # from this individual session.
             # -------------------------------------------------
 
-            if isinstance(
-                info,
-                list
-            ):
+            if question_columns:
 
-                cleaned_sessions[
-                    person
-                ] = {
+                scores = (
+                    group[
+                        question_columns
+                    ]
+                    .stack()
+                    .dropna()
+                )
 
-                    "username": "",
+            else:
 
-                    "sessions": sorted(
-                        {
-                            str(title).strip()
-                            for title in info
-                            if str(title).strip()
-                        }
-                    )
-                }
-
-
-            # -------------------------------------------------
-            # NEW FORMAT
-            # -------------------------------------------------
-
-            elif isinstance(
-                info,
-                dict
-            ):
-
-                username_value = str(
-                    info.get(
-                        "username",
-                        ""
-                    )
-                ).strip()
-
-
-                titles = info.get(
-                    "sessions",
-                    []
+                scores = pd.Series(
+                    dtype=float
                 )
 
 
-                if not isinstance(
-                    titles,
-                    list
+            if len(
+                scores
+            ) > 0:
+
+                rating_average = float(
+                    scores.mean()
+                )
+
+            else:
+
+                rating_average = None
+
+
+            # -------------------------------------------------
+            # Number of evaluations
+            # -------------------------------------------------
+
+            number_evaluations = len(
+                group
+            )
+
+
+            # -------------------------------------------------
+            # Number of participants
+            #
+            # Uses the first valid par_number for that session.
+            # -------------------------------------------------
+
+            participant_number = None
+
+
+            if (
+                "par_number"
+                in group.columns
+            ):
+
+                participant_values = (
+                    pd.to_numeric(
+                        group[
+                            "par_number"
+                        ],
+                        errors="coerce"
+                    )
+                    .dropna()
+                )
+
+
+                if len(
+                    participant_values
+                ) > 0:
+
+                    participant_number = int(
+                        participant_values.iloc[
+                            0
+                        ]
+                    )
+
+
+            # -------------------------------------------------
+            # Username
+            #
+            # Pulled directly from original REDCap export.
+            # -------------------------------------------------
+
+            username = ""
+
+
+            if (
+                "username"
+                in group.columns
+            ):
+
+                username_values = (
+                    group[
+                        "username"
+                    ]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                )
+
+
+                username_values = [
+                    value
+                    for value
+                    in username_values
+                    if value
+                ]
+
+
+                if username_values:
+
+                    username = (
+                        username_values[
+                            0
+                        ]
+                    )
+
+
+            # -------------------------------------------------
+            # Friendly date
+            # -------------------------------------------------
+
+            parsed_date = pd.to_datetime(
+                session_day,
+                errors="coerce"
+            )
+
+
+            if pd.isna(
+                parsed_date
+            ):
+
+                display_date = ""
+
+            else:
+
+                display_date = (
+                    parsed_date.strftime(
+                        "%m/%d/%Y"
+                    )
+                )
+
+
+            summary_rows.append(
+                {
+                    "Username":
+                        username,
+
+                    "Academic Year":
+                        academic_year,
+
+                    "Session Date":
+                        display_date,
+
+                    "Session Title":
+                        session_title,
+
+                    "Participants":
+                        participant_number,
+
+                    "Rating Average":
+                        rating_average,
+
+                    "Number of Evaluations":
+                        number_evaluations,
+
+                    "_session_key":
+                        (
+                            str(
+                                session_title
+                            )
+                            + "||"
+                            + str(
+                                session_day
+                            )
+                        ),
+                }
+            )
+
+
+        summary_df = pd.DataFrame(
+            summary_rows
+        )
+
+
+        # -----------------------------------------------------
+        # Newest session first
+        # -----------------------------------------------------
+
+        if not summary_df.empty:
+
+            summary_df[
+                "_sort_date"
+            ] = pd.to_datetime(
+                summary_df[
+                    "Session Date"
+                ],
+                errors="coerce"
+            )
+
+
+            summary_df = summary_df.sort_values(
+                "_sort_date",
+                ascending=False
+            )
+
+
+            summary_df = summary_df.drop(
+                columns=[
+                    "_sort_date"
+                ]
+            )
+
+
+        return summary_df
+
+
+    # =========================================================
+    # CREATE ONE PRESENTER'S WORD REPORT
+    # =========================================================
+
+    def create_presenter_word_report(
+        evaluation_df,
+        presenter_name,
+        question_columns,
+        question_labels,
+        comment_columns,
+        comment_labels,
+        custom_comment_summary=""
+    ):
+
+        presenter_df = prepare_presenter_data(
+            evaluation_df,
+            presenter_name,
+            question_columns
+        )
+
+
+        session_summary = create_session_summary(
+            presenter_df,
+            question_columns
+        )
+
+
+        # =====================================================
+        # OVERALL PRESENTER RATING
+        # =====================================================
+
+        if question_columns:
+
+            all_scores = (
+                presenter_df[
+                    question_columns
+                ]
+                .stack()
+                .dropna()
+            )
+
+        else:
+
+            all_scores = pd.Series(
+                dtype=float
+            )
+
+
+        if len(
+            all_scores
+        ) > 0:
+
+            overall_rating = float(
+                all_scores.mean()
+            )
+
+            overall_rating_text = (
+                f"{overall_rating:.2f}/5.00"
+            )
+
+        else:
+
+            overall_rating_text = "N/A"
+
+
+        total_evaluations = len(
+            presenter_df
+        )
+
+
+        # =====================================================
+        # COLLECT COMMENTS
+        # =====================================================
+
+        cleaned_comments = {}
+
+
+        evaluations_with_comments = pd.Series(
+            False,
+            index=presenter_df.index
+        )
+
+
+        total_comments = 0
+
+
+        for comment_col in (
+            comment_columns
+        ):
+
+            entries = []
+
+
+            for idx, row in (
+                presenter_df.iterrows()
+            ):
+
+                comment = clean_redcap_comment(
+                    row.get(
+                        comment_col,
+                        ""
+                    )
+                )
+
+
+                if not comment:
+                    continue
+
+
+                total_comments += 1
+
+
+                evaluations_with_comments.loc[
+                    idx
+                ] = True
+
+
+                session_date = pd.to_datetime(
+                    row.get(
+                        "_session_date"
+                    ),
+                    errors="coerce"
+                )
+
+
+                if pd.isna(
+                    session_date
                 ):
 
-                    titles = [
-                        titles
-                    ]
+                    date_text = ""
+
+                else:
+
+                    date_text = (
+                        session_date.strftime(
+                            "%m/%d/%Y"
+                        )
+                    )
 
 
-                cleaned_titles = sorted(
+                entries.append(
                     {
-                        str(title).strip()
-                        for title in titles
-                        if str(title).strip()
+                        "date":
+                            date_text,
+
+                        "title":
+                            row.get(
+                                "_title",
+                                ""
+                            ),
+
+                        "comment":
+                            comment,
                     }
                 )
 
 
-                cleaned_sessions[
-                    person
-                ] = {
-
-                    "username":
-                        username_value,
-
-                    "sessions":
-                        cleaned_titles
-                }
+            cleaned_comments[
+                comment_col
+            ] = entries
 
 
-        return cleaned_sessions
+        number_evaluations_with_comments = int(
+            evaluations_with_comments.sum()
+        )
 
 
-    # =========================================================
-    # ENCRYPT / DECRYPT
-    # =========================================================
+        # =====================================================
+        # CREATE WORD DOCUMENT
+        # =====================================================
 
-    def encrypt_saved_data(
-        data
-    ):
+        document = Document()
 
-        # -----------------------------------------------------
-        # Normalize before saving
-        # -----------------------------------------------------
 
-        data = normalize_saved_sessions(
-            data
+        section = document.sections[
+            0
+        ]
+
+        section.top_margin = Inches(
+            0.55
+        )
+
+        section.bottom_margin = Inches(
+            0.55
+        )
+
+        section.left_margin = Inches(
+            0.55
+        )
+
+        section.right_margin = Inches(
+            0.55
         )
 
 
         # -----------------------------------------------------
-        # Convert dictionary to JSON
+        # Default font
         # -----------------------------------------------------
 
-        json_text = json.dumps(
-            data,
-            ensure_ascii=False,
-            separators=(
-                ",",
-                ":"
-            )
+        normal_style = document.styles[
+            "Normal"
+        ]
+
+        normal_style.font.name = "Arial"
+
+        normal_style.font.size = Pt(
+            9
         )
 
 
-        # -----------------------------------------------------
-        # Encrypt entire JSON document
-        # -----------------------------------------------------
+        # =====================================================
+        # PRESENTER NAME
+        # =====================================================
 
-        encrypted_bytes = (
-            cipher.encrypt(
-                json_text.encode(
-                    "utf-8"
-                )
-            )
+        paragraph = document.add_paragraph()
+
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            2
         )
 
 
-        return encrypted_bytes.decode(
-            "utf-8"
+        run = paragraph.add_run(
+            presenter_name
+        )
+
+        run.bold = True
+        run.font.name = "Arial"
+        run.font.size = Pt(
+            16
         )
 
 
-    def decrypt_saved_data(
-        encrypted_text
-    ):
+        # =====================================================
+        # DOCUMENT TITLE
+        # =====================================================
 
-        # -----------------------------------------------------
-        # Decrypt Fernet token
-        # -----------------------------------------------------
+        paragraph = document.add_paragraph()
 
-        decrypted_bytes = (
-            cipher.decrypt(
-                encrypted_text.encode(
-                    "utf-8"
-                )
-            )
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            7
         )
 
 
-        # -----------------------------------------------------
-        # Convert decrypted JSON back to dictionary
-        # -----------------------------------------------------
+        run = paragraph.add_run(
+            "Teaching Evaluation Summary"
+        )
 
-        data = json.loads(
-            decrypted_bytes.decode(
-                "utf-8"
-            )
+        run.bold = True
+        run.font.name = "Arial"
+        run.font.size = Pt(
+            12
         )
 
 
-        return normalize_saved_sessions(
-            data
+        # =====================================================
+        # OVERALL SUMMARY
+        # =====================================================
+
+        paragraph = document.add_paragraph()
+
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.CENTER
+        )
+
+        paragraph.paragraph_format.space_after = Pt(
+            8
         )
 
 
-    # =========================================================
-    # GITHUB HELPERS
-    # =========================================================
+        run = paragraph.add_run(
+            f"Completed Evaluations: "
+            f"{total_evaluations}"
+            f"    |    "
+            f"Overall Rating: "
+            f"{overall_rating_text}"
+        )
 
-    def github_headers():
+        run.font.name = "Arial"
 
-        return {
-
-            "Authorization":
-                f"Bearer {GITHUB_TOKEN}",
-
-            "Accept":
-                "application/vnd.github+json",
-
-            "X-GitHub-Api-Version":
-                "2022-11-28",
-        }
-
-
-    def github_file_url(
-        file_path
-    ):
-
-        encoded_path = (
-            urllib.parse.quote(
-                file_path,
-                safe="/"
-            )
+        run.font.size = Pt(
+            9
         )
 
 
-        return (
-            f"https://api.github.com/repos/"
-            f"{GITHUB_REPO}/contents/"
-            f"{encoded_path}"
+        # =====================================================
+        # TEACHING ACTIVITY SUMMARY
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Teaching Activity Summary"
         )
 
 
-    # =========================================================
-    # SAVE ENCRYPTED DATA TO GITHUB
-    # =========================================================
-
-    def save_saved_sessions(
-        data,
-        commit_message=(
-            "Update encrypted session feedback options"
-        )
-    ):
-
-        if not github_configured:
-
-            st.error(
-                "GitHub persistence is not configured. "
-                "Add the [github] section to "
-                "Streamlit Secrets."
-            )
-
-            return False
-
-
-        # -----------------------------------------------------
-        # Normalize
-        # -----------------------------------------------------
-
-        data = normalize_saved_sessions(
-            data
+        activity_table = document.add_table(
+            rows=1,
+            cols=6
         )
 
 
-        # -----------------------------------------------------
-        # Encrypt
-        # -----------------------------------------------------
-
-        encrypted_text = (
-            encrypt_saved_data(
-                data
-            )
+        activity_table.style = (
+            "Table Grid"
         )
 
-
-        # -----------------------------------------------------
-        # GitHub Contents API itself requires file content
-        # to be base64 encoded.
-        #
-        # This is separate from the encryption.
-        # -----------------------------------------------------
-
-        encoded_content = (
-            base64.b64encode(
-                encrypted_text.encode(
-                    "utf-8"
-                )
-            )
-            .decode(
-                "utf-8"
-            )
+        activity_table.alignment = (
+            WD_TABLE_ALIGNMENT.CENTER
         )
 
-
-        url = github_file_url(
-            GITHUB_DATA_FILE
-        )
+        activity_table.autofit = True
 
 
-        sha = None
+        activity_headers = [
+            "Academic Year",
+            "Session Date",
+            "Session Title",
+            "Participants",
+            "Rating Average\nLow 1 - High 5",
+            "Number of\nEvaluations",
+        ]
 
 
-        try:
+        for index, header in enumerate(
+            activity_headers
+        ):
 
-            # =================================================
-            # CHECK IF ENCRYPTED FILE ALREADY EXISTS
-            # =================================================
-
-            current_response = (
-                requests.get(
-                    url,
-                    headers=github_headers(),
-                    params={
-                        "ref":
-                            GITHUB_BRANCH
-                    },
-                    timeout=15,
-                )
+            shade_cell(
+                activity_table.rows[
+                    0
+                ].cells[
+                    index
+                ]
             )
 
 
-            if (
-                current_response.status_code
-                == 200
+            set_cell_text(
+                activity_table.rows[
+                    0
+                ].cells[
+                    index
+                ],
+                header,
+                bold=True,
+                size=8
+            )
+
+
+        for _, row in (
+            session_summary.iterrows()
+        ):
+
+            cells = (
+                activity_table
+                .add_row()
+                .cells
+            )
+
+
+            # ---------------------------------------------
+            # Rating
+            # ---------------------------------------------
+
+            rating = row[
+                "Rating Average"
+            ]
+
+
+            if pd.isna(
+                rating
             ):
 
-                sha = (
-                    current_response
-                    .json()
-                    .get(
-                        "sha"
+                rating_text = "N/A"
+
+            else:
+
+                rating_text = (
+                    f"{rating:.2f}"
+                )
+
+
+            # ---------------------------------------------
+            # Participants
+            # ---------------------------------------------
+
+            participants = row[
+                "Participants"
+            ]
+
+
+            if pd.isna(
+                participants
+            ):
+
+                participant_text = ""
+
+            else:
+
+                participant_text = str(
+                    int(
+                        participants
                     )
                 )
 
 
-            elif (
-                current_response.status_code
-                != 404
+            values = [
+                row[
+                    "Academic Year"
+                ],
+
+                row[
+                    "Session Date"
+                ],
+
+                row[
+                    "Session Title"
+                ],
+
+                participant_text,
+
+                rating_text,
+
+                int(
+                    row[
+                        "Number of Evaluations"
+                    ]
+                ),
+            ]
+
+
+            for index, value in enumerate(
+                values
             ):
 
-                st.error(
-                    "Could not check the encrypted "
-                    "GitHub data file. "
-                    f"HTTP "
-                    f"{current_response.status_code}"
+                set_cell_text(
+                    cells[
+                        index
+                    ],
+                    value,
+                    size=8,
+                    alignment=(
+                        "left"
+                        if index == 2
+                        else "center"
+                    )
                 )
 
-                return False
 
+        # =====================================================
+        # QUESTION AVERAGES
+        # =====================================================
 
-            # =================================================
-            # GITHUB PAYLOAD
-            # =================================================
-
-            payload = {
-
-                "message":
-                    commit_message,
-
-                "content":
-                    encoded_content,
-
-                "branch":
-                    GITHUB_BRANCH,
-            }
-
-
-            # -------------------------------------------------
-            # SHA required when updating existing file
-            # -------------------------------------------------
-
-            if sha:
-
-                payload[
-                    "sha"
-                ] = sha
-
-
-            # =================================================
-            # SAVE
-            # =================================================
-
-            response = requests.put(
-                url,
-                headers=github_headers(),
-                json=payload,
-                timeout=15,
-            )
-
-
-            if response.status_code in (
-                200,
-                201
-            ):
-
-                return True
-
-
-            st.error(
-                "GitHub could not save the encrypted "
-                "presenter information. "
-                f"HTTP {response.status_code}: "
-                f"{response.text}"
-            )
-
-
-            return False
-
-
-        except Exception as e:
-
-            st.error(
-                "Unable to save encrypted "
-                f"presenter information: {e}"
-            )
-
-            return False
-
-
-    # =========================================================
-    # LOAD OLD PLAINTEXT FILE
-    # =========================================================
-    #
-    # Only used if encrypted .enc file does not exist.
-    #
-    # =========================================================
-
-    def load_legacy_plaintext_file():
-
-        if not github_configured:
-
-            return None
-
-
-        legacy_url = github_file_url(
-            LEGACY_GITHUB_DATA_FILE
+        add_section_heading(
+            document,
+            "Teaching Evaluations"
         )
 
 
-        try:
+        if question_columns:
 
-            response = requests.get(
-                legacy_url,
-                headers=github_headers(),
-                params={
-                    "ref":
-                        GITHUB_BRANCH
-                },
-                timeout=15,
+            question_table = document.add_table(
+                rows=1,
+                cols=3
             )
 
 
-            if (
-                response.status_code
-                == 404
-            ):
+            question_table.style = (
+                "Table Grid"
+            )
 
-                return None
-
-
-            if (
-                response.status_code
-                != 200
-            ):
-
-                return None
-
-
-            file_info = (
-                response.json()
+            question_table.alignment = (
+                WD_TABLE_ALIGNMENT.CENTER
             )
 
 
-            encoded_content = (
-                file_info.get(
-                    "content",
+            question_headers = [
+                "Evaluation Item",
+                (
+                    "Average Response\n"
+                    "1 = Strongly Disagree\n"
+                    "5 = Strongly Agree"
+                ),
+                "N",
+            ]
+
+
+            for index, header in enumerate(
+                question_headers
+            ):
+
+                shade_cell(
+                    question_table.rows[
+                        0
+                    ].cells[
+                        index
+                    ]
+                )
+
+
+                set_cell_text(
+                    question_table.rows[
+                        0
+                    ].cells[
+                        index
+                    ],
+                    header,
+                    bold=True,
+                    size=8
+                )
+
+
+            for question_col in (
+                question_columns
+            ):
+
+                values = (
+                    pd.to_numeric(
+                        presenter_df[
+                            question_col
+                        ],
+                        errors="coerce"
+                    )
+                    .dropna()
+                )
+
+
+                if len(
+                    values
+                ) > 0:
+
+                    average_text = (
+                        f"{values.mean():.2f}"
+                    )
+
+                else:
+
+                    average_text = "N/A"
+
+
+                cells = (
+                    question_table
+                    .add_row()
+                    .cells
+                )
+
+
+                set_cell_text(
+                    cells[
+                        0
+                    ],
+                    question_labels.get(
+                        question_col,
+                        question_col
+                    ),
+                    size=8,
+                    alignment="left"
+                )
+
+
+                set_cell_text(
+                    cells[
+                        1
+                    ],
+                    average_text,
+                    size=8
+                )
+
+
+                set_cell_text(
+                    cells[
+                        2
+                    ],
+                    len(
+                        values
+                    ),
+                    size=8
+                )
+
+
+        else:
+
+            paragraph = document.add_paragraph(
+                "No rating questions were detected."
+            )
+
+            paragraph.runs[
+                0
+            ].font.size = Pt(
+                8.5
+            )
+
+
+        # =====================================================
+        # NARRATIVE FEEDBACK SUMMARY
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Narrative Feedback Summary"
+        )
+
+
+        if (
+            custom_comment_summary.strip()
+        ):
+
+            narrative_summary = (
+                custom_comment_summary.strip()
+            )
+
+        else:
+
+            narrative_summary = (
+                f"Written feedback was provided on "
+                f"{number_evaluations_with_comments} "
+                f"of {total_evaluations} completed "
+                f"evaluations. A total of "
+                f"{total_comments} narrative "
+                f"comment(s) were submitted."
+            )
+
+
+        paragraph = document.add_paragraph()
+
+        paragraph.paragraph_format.space_after = Pt(
+            5
+        )
+
+
+        run = paragraph.add_run(
+            narrative_summary
+        )
+
+        run.font.name = "Arial"
+
+        run.font.size = Pt(
+            9
+        )
+
+
+        # =====================================================
+        # COMMENT COUNTS
+        # =====================================================
+
+        if comment_columns:
+
+            comment_summary_table = (
+                document.add_table(
+                    rows=1,
+                    cols=2
+                )
+            )
+
+
+            comment_summary_table.style = (
+                "Table Grid"
+            )
+
+            comment_summary_table.alignment = (
+                WD_TABLE_ALIGNMENT.CENTER
+            )
+
+
+            shade_cell(
+                comment_summary_table.rows[
+                    0
+                ].cells[
+                    0
+                ]
+            )
+
+            shade_cell(
+                comment_summary_table.rows[
+                    0
+                ].cells[
+                    1
+                ]
+            )
+
+
+            set_cell_text(
+                comment_summary_table.rows[
+                    0
+                ].cells[
+                    0
+                ],
+                "Narrative Feedback Item",
+                bold=True,
+                size=8
+            )
+
+
+            set_cell_text(
+                comment_summary_table.rows[
+                    0
+                ].cells[
+                    1
+                ],
+                "Comments Submitted",
+                bold=True,
+                size=8
+            )
+
+
+            for comment_col in (
+                comment_columns
+            ):
+
+                cells = (
+                    comment_summary_table
+                    .add_row()
+                    .cells
+                )
+
+
+                set_cell_text(
+                    cells[
+                        0
+                    ],
+                    comment_labels.get(
+                        comment_col,
+                        comment_col
+                    ),
+                    size=8,
+                    alignment="left"
+                )
+
+
+                set_cell_text(
+                    cells[
+                        1
+                    ],
+                    len(
+                        cleaned_comments.get(
+                            comment_col,
+                            []
+                        )
+                    ),
+                    size=8
+                )
+
+
+        # =====================================================
+        # VERBATIM LEARNER COMMENTS
+        # =====================================================
+
+        add_section_heading(
+            document,
+            "Learner Comments"
+        )
+
+
+        comments_written = False
+
+
+        for comment_col in (
+            comment_columns
+        ):
+
+            entries = cleaned_comments.get(
+                comment_col,
+                []
+            )
+
+
+            if not entries:
+                continue
+
+
+            comments_written = True
+
+
+            # ---------------------------------------------
+            # Comment prompt
+            # ---------------------------------------------
+
+            paragraph = document.add_paragraph()
+
+            paragraph.paragraph_format.space_before = Pt(
+                4
+            )
+
+            paragraph.paragraph_format.space_after = Pt(
+                1
+            )
+
+
+            run = paragraph.add_run(
+                comment_labels.get(
+                    comment_col,
+                    comment_col
+                )
+            )
+
+            run.bold = True
+            run.font.name = "Arial"
+
+            run.font.size = Pt(
+                9
+            )
+
+
+            # ---------------------------------------------
+            # Comments
+            # ---------------------------------------------
+
+            for entry in entries:
+
+                context = []
+
+
+                if entry[
+                    "date"
+                ]:
+
+                    context.append(
+                        entry[
+                            "date"
+                        ]
+                    )
+
+
+                if entry[
+                    "title"
+                ]:
+
+                    context.append(
+                        entry[
+                            "title"
+                        ]
+                    )
+
+
+                if context:
+
+                    prefix = (
+                        " — ".join(
+                            context
+                        )
+                        + ": "
+                    )
+
+                else:
+
+                    prefix = ""
+
+
+                paragraph = document.add_paragraph(
+                    style="List Bullet"
+                )
+
+                paragraph.paragraph_format.space_after = Pt(
+                    1
+                )
+
+
+                run = paragraph.add_run(
+                    prefix
+                    + entry[
+                        "comment"
+                    ]
+                )
+
+                run.font.name = "Arial"
+
+                run.font.size = Pt(
+                    8.5
+                )
+
+
+        if not comments_written:
+
+            paragraph = document.add_paragraph(
+                "No narrative comments were submitted."
+            )
+
+            paragraph.runs[
+                0
+            ].font.size = Pt(
+                8.5
+            )
+
+
+        # -----------------------------------------------------
+        # Footer note
+        # -----------------------------------------------------
+
+        paragraph = document.add_paragraph()
+
+        paragraph.paragraph_format.space_before = Pt(
+            6
+        )
+
+
+        run = paragraph.add_run(
+            "Learner comments are presented verbatim "
+            "except for removal of REDCap HTML formatting."
+        )
+
+        run.italic = True
+        run.font.name = "Arial"
+
+        run.font.size = Pt(
+            7.5
+        )
+
+
+        # =====================================================
+        # SAVE WORD FILE TO MEMORY
+        # =====================================================
+
+        output = io.BytesIO()
+
+        document.save(
+            output
+        )
+
+        output.seek(
+            0
+        )
+
+        return output.getvalue()
+
+
+    # =========================================================
+    # CREATE MASTER CSV FOR ZIP
+    # =========================================================
+    #
+    # One row = one individual teaching session.
+    #
+    # username is intentionally the FIRST column.
+    #
+    # Presenter-wide averages are repeated across that
+    # presenter's session rows so the CSV remains a simple,
+    # flat, sortable file.
+    # =========================================================
+
+    def create_master_summary_csv(
+        evaluation_df,
+        presenters,
+        question_columns,
+        question_labels,
+        comment_columns,
+        comment_labels,
+        custom_comment_summaries
+    ):
+
+        master_rows = []
+
+
+        for presenter_name in (
+            presenters
+        ):
+
+            presenter_df = prepare_presenter_data(
+                evaluation_df,
+                presenter_name,
+                question_columns
+            )
+
+
+            session_summary = create_session_summary(
+                presenter_df,
+                question_columns
+            )
+
+
+            # =================================================
+            # OVERALL PRESENTER RATING
+            # =================================================
+
+            if question_columns:
+
+                all_scores = (
+                    presenter_df[
+                        question_columns
+                    ]
+                    .stack()
+                    .dropna()
+                )
+
+            else:
+
+                all_scores = pd.Series(
+                    dtype=float
+                )
+
+
+            if len(
+                all_scores
+            ) > 0:
+
+                overall_rating = round(
+                    float(
+                        all_scores.mean()
+                    ),
+                    2
+                )
+
+            else:
+
+                overall_rating = ""
+
+
+            total_evaluations = len(
+                presenter_df
+            )
+
+
+            # =================================================
+            # PRESENTER-WIDE QUESTION AVERAGES
+            # =================================================
+
+            question_results = {}
+
+
+            for question_col in (
+                question_columns
+            ):
+
+                values = (
+                    pd.to_numeric(
+                        presenter_df[
+                            question_col
+                        ],
+                        errors="coerce"
+                    )
+                    .dropna()
+                )
+
+
+                if len(
+                    values
+                ) > 0:
+
+                    average = round(
+                        float(
+                            values.mean()
+                        ),
+                        2
+                    )
+
+                else:
+
+                    average = ""
+
+
+                question_results[
+                    question_col
+                ] = {
+                    "question":
+                        question_labels.get(
+                            question_col,
+                            question_col
+                        ),
+
+                    "average":
+                        average,
+
+                    "n":
+                        len(
+                            values
+                        ),
+                }
+
+
+            # =================================================
+            # PRESENTER-WIDE COMMENT COUNTS
+            # =================================================
+
+            evaluations_with_comments = pd.Series(
+                False,
+                index=presenter_df.index
+            )
+
+
+            total_comments = 0
+
+
+            presenter_comment_counts = {}
+
+
+            for comment_col in (
+                comment_columns
+            ):
+
+                this_prompt_count = 0
+
+
+                for idx, row in (
+                    presenter_df.iterrows()
+                ):
+
+                    comment = clean_redcap_comment(
+                        row.get(
+                            comment_col,
+                            ""
+                        )
+                    )
+
+
+                    if not comment:
+                        continue
+
+
+                    total_comments += 1
+
+                    this_prompt_count += 1
+
+
+                    evaluations_with_comments.loc[
+                        idx
+                    ] = True
+
+
+                presenter_comment_counts[
+                    comment_col
+                ] = this_prompt_count
+
+
+            number_evaluations_with_comments = int(
+                evaluations_with_comments.sum()
+            )
+
+
+            # =================================================
+            # NARRATIVE SUMMARY
+            # =================================================
+
+            custom_summary = (
+                custom_comment_summaries.get(
+                    presenter_name,
                     ""
-                )
-            )
-
-
-            decoded_content = (
-                base64.b64decode(
-                    encoded_content
-                )
-                .decode(
-                    "utf-8"
                 )
                 .strip()
             )
 
 
-            if not decoded_content:
+            if custom_summary:
 
-                return None
-
-
-            try:
-
-                data = json.loads(
-                    decoded_content
+                narrative_summary = (
+                    custom_summary
                 )
-
-            except json.JSONDecodeError:
-
-                return None
-
-
-            return normalize_saved_sessions(
-                data
-            )
-
-
-        except Exception:
-
-            return None
-
-
-    # =========================================================
-    # LOAD ENCRYPTED DATA FROM GITHUB
-    # =========================================================
-
-    def load_saved_sessions():
-
-        # -----------------------------------------------------
-        # If GitHub is unavailable, use defaults for this run.
-        # They will not persist.
-        # -----------------------------------------------------
-
-        if not github_configured:
-
-            return normalize_saved_sessions(
-                DEFAULT_SESSIONS
-            )
-
-
-        url = github_file_url(
-            GITHUB_DATA_FILE
-        )
-
-
-        try:
-
-            response = requests.get(
-                url,
-                headers=github_headers(),
-                params={
-                    "ref":
-                        GITHUB_BRANCH
-                },
-                timeout=15,
-            )
-
-
-            # =================================================
-            # ENCRYPTED FILE EXISTS
-            # =================================================
-
-            if (
-                response.status_code
-                == 200
-            ):
-
-                file_info = (
-                    response.json()
-                )
-
-
-                encoded_content = (
-                    file_info.get(
-                        "content",
-                        ""
-                    )
-                )
-
-
-                encrypted_text = (
-                    base64.b64decode(
-                        encoded_content
-                    )
-                    .decode(
-                        "utf-8"
-                    )
-                    .strip()
-                )
-
-
-                if not encrypted_text:
-
-                    st.error(
-                        "The encrypted presenter file "
-                        "exists but is empty."
-                    )
-
-                    st.stop()
-
-
-                try:
-
-                    return decrypt_saved_data(
-                        encrypted_text
-                    )
-
-
-                except InvalidToken:
-
-                    st.error(
-                        "The encrypted presenter file "
-                        "could not be decrypted. "
-                        "The Streamlit encryption key "
-                        "does not match the key that was "
-                        "used to create this file."
-                    )
-
-                    st.stop()
-
-
-                except Exception as e:
-
-                    st.error(
-                        "The encrypted presenter file "
-                        "could not be read. "
-                        f"{e}"
-                    )
-
-                    st.stop()
-
-
-            # =================================================
-            # ENCRYPTED FILE DOES NOT EXIST
-            # =================================================
-
-            elif (
-                response.status_code
-                == 404
-            ):
-
-                # ---------------------------------------------
-                # Check for OLD plaintext JSON
-                # ---------------------------------------------
-
-                legacy_data = (
-                    load_legacy_plaintext_file()
-                )
-
-
-                if legacy_data:
-
-                    success = (
-                        save_saved_sessions(
-                            legacy_data,
-                            commit_message=(
-                                "Migrate session feedback "
-                                "options to encrypted storage"
-                            )
-                        )
-                    )
-
-
-                    if success:
-
-                        st.warning(
-                            "Your old presenter data was "
-                            "successfully migrated to the "
-                            "encrypted GitHub file. "
-                            "The old plaintext JSON file "
-                            "still exists in GitHub and "
-                            "should be removed."
-                        )
-
-
-                    return legacy_data
-
-
-                # ---------------------------------------------
-                # No old file either.
-                # Create encrypted defaults.
-                # ---------------------------------------------
-
-                default_data = (
-                    normalize_saved_sessions(
-                        DEFAULT_SESSIONS
-                    )
-                )
-
-
-                save_saved_sessions(
-                    default_data,
-                    commit_message=(
-                        "Create encrypted session "
-                        "feedback options"
-                    )
-                )
-
-
-                return default_data
-
-
-            # =================================================
-            # UNEXPECTED GITHUB ERROR
-            # =================================================
 
             else:
 
-                st.error(
-                    "Could not load the encrypted "
-                    "presenter information from GitHub. "
-                    f"HTTP {response.status_code}"
+                narrative_summary = (
+                    f"Written feedback was provided on "
+                    f"{number_evaluations_with_comments} "
+                    f"of {total_evaluations} completed "
+                    f"evaluations. A total of "
+                    f"{total_comments} narrative "
+                    f"comment(s) were submitted."
                 )
 
-                st.stop()
 
+            # =================================================
+            # ONE CSV ROW PER INDIVIDUAL SESSION
+            # =================================================
+
+            for _, session_row in (
+                session_summary.iterrows()
+            ):
+
+                output_row = {}
+
+
+                # =============================================
+                # USERNAME MUST BE FIRST COLUMN
+                # =============================================
+
+                output_row[
+                    "username"
+                ] = session_row[
+                    "Username"
+                ]
+
+
+                # =============================================
+                # SESSION INFORMATION
+                # =============================================
+
+                output_row[
+                    "presenter"
+                ] = presenter_name
+
+
+                output_row[
+                    "academic_year"
+                ] = session_row[
+                    "Academic Year"
+                ]
+
+
+                output_row[
+                    "session_date"
+                ] = session_row[
+                    "Session Date"
+                ]
+
+
+                output_row[
+                    "session_title"
+                ] = session_row[
+                    "Session Title"
+                ]
+
+
+                # ---------------------------------------------
+                # Participants
+                # ---------------------------------------------
+
+                participants = session_row[
+                    "Participants"
+                ]
+
+
+                if pd.isna(
+                    participants
+                ):
+
+                    output_row[
+                        "participants"
+                    ] = ""
+
+                else:
+
+                    output_row[
+                        "participants"
+                    ] = int(
+                        participants
+                    )
+
+
+                # ---------------------------------------------
+                # Session rating
+                # ---------------------------------------------
+
+                session_rating = session_row[
+                    "Rating Average"
+                ]
+
+
+                if pd.isna(
+                    session_rating
+                ):
+
+                    output_row[
+                        "session_rating_average"
+                    ] = ""
+
+                else:
+
+                    output_row[
+                        "session_rating_average"
+                    ] = round(
+                        float(
+                            session_rating
+                        ),
+                        2
+                    )
+
+
+                # ---------------------------------------------
+                # Number of evaluations
+                # ---------------------------------------------
+
+                output_row[
+                    "number_of_evaluations"
+                ] = int(
+                    session_row[
+                        "Number of Evaluations"
+                    ]
+                )
+
+
+                # =============================================
+                # PRESENTER-WIDE INFORMATION
+                # =============================================
+
+                output_row[
+                    "overall_presenter_rating"
+                ] = overall_rating
+
+
+                output_row[
+                    "total_presenter_evaluations"
+                ] = total_evaluations
+
+
+                output_row[
+                    "rating_scale"
+                ] = (
+                    "1 = Strongly Disagree; "
+                    "5 = Strongly Agree"
+                )
+
+
+                # =============================================
+                # QUESTION AVERAGES
+                # =============================================
+
+                for question_col in (
+                    question_columns
+                ):
+
+                    result = question_results[
+                        question_col
+                    ]
+
+
+                    output_row[
+                        f"{question_col}_question"
+                    ] = result[
+                        "question"
+                    ]
+
+
+                    output_row[
+                        f"{question_col}_average"
+                    ] = result[
+                        "average"
+                    ]
+
+
+                    output_row[
+                        f"{question_col}_n"
+                    ] = result[
+                        "n"
+                    ]
+
+
+                # =============================================
+                # NARRATIVE SUMMARY
+                # =============================================
+
+                output_row[
+                    "narrative_feedback_summary"
+                ] = narrative_summary
+
+
+                output_row[
+                    "evaluations_with_comments"
+                ] = (
+                    number_evaluations_with_comments
+                )
+
+
+                output_row[
+                    "total_comments"
+                ] = total_comments
+
+
+                # =============================================
+                # COMMENTS FOR THIS INDIVIDUAL SESSION
+                # =============================================
+
+                session_key = session_row[
+                    "_session_key"
+                ]
+
+
+                session_evaluations = presenter_df[
+                    presenter_df[
+                        "_session_key"
+                    ] == session_key
+                ]
+
+
+                for comment_col in (
+                    comment_columns
+                ):
+
+                    # -----------------------------------------
+                    # Prompt wording
+                    # -----------------------------------------
+
+                    output_row[
+                        f"{comment_col}_prompt"
+                    ] = comment_labels.get(
+                        comment_col,
+                        comment_col
+                    )
+
+
+                    # -----------------------------------------
+                    # Total comments for this prompt
+                    # across presenter's entire report
+                    # -----------------------------------------
+
+                    output_row[
+                        f"{comment_col}_total_comments"
+                    ] = presenter_comment_counts.get(
+                        comment_col,
+                        0
+                    )
+
+
+                    # -----------------------------------------
+                    # Comments from THIS session
+                    # -----------------------------------------
+
+                    session_comments = []
+
+
+                    for _, evaluation_row in (
+                        session_evaluations.iterrows()
+                    ):
+
+                        comment = clean_redcap_comment(
+                            evaluation_row.get(
+                                comment_col,
+                                ""
+                            )
+                        )
+
+
+                        if comment:
+
+                            session_comments.append(
+                                comment
+                            )
+
+
+                    output_row[
+                        f"{comment_col}_session_comments"
+                    ] = " | ".join(
+                        session_comments
+                    )
+
+
+                master_rows.append(
+                    output_row
+                )
+
+
+        # =====================================================
+        # CREATE CSV
+        # =====================================================
+
+        master_df = pd.DataFrame(
+            master_rows
+        )
+
+
+        csv_buffer = io.StringIO()
+
+
+        master_df.to_csv(
+            csv_buffer,
+            index=False
+        )
+
+
+        # UTF-8-SIG opens cleanly in Excel
+        return csv_buffer.getvalue().encode(
+            "utf-8-sig"
+        )
+
+
+    # =========================================================
+    # USER INTERFACE
+    # =========================================================
+
+    st.write(
+        "Upload the REDCap CSV export to create "
+        "promotion-ready teaching evaluation summaries "
+        "for each presenter."
+    )
+
+
+    st.caption(
+        "Each unique session date + session title is "
+        "listed as an individual teaching session. "
+        "Repeated session titles on different dates "
+        "remain separate."
+    )
+
+
+    # =========================================================
+    # UPLOAD REDCAP CSV
+    # =========================================================
+
+    uploaded_file = st.file_uploader(
+        "Upload REDCap Evaluation CSV",
+        type=[
+            "csv"
+        ],
+        key="session_feedback_summary_upload"
+    )
+
+
+    if uploaded_file is not None:
+
+        file_bytes = (
+            uploaded_file.getvalue()
+        )
+
+
+        current_file_hash = hashlib.sha256(
+            file_bytes
+        ).hexdigest()
+
+
+        # -----------------------------------------------------
+        # Clear previous reports if a different CSV is uploaded
+        # -----------------------------------------------------
+
+        if (
+            st.session_state.get(
+                "feedback_summary_file_hash"
+            )
+            != current_file_hash
+        ):
+
+            st.session_state[
+                "feedback_summary_file_hash"
+            ] = current_file_hash
+
+
+            st.session_state.pop(
+                "feedback_summary_reports",
+                None
+            )
+
+
+            st.session_state.pop(
+                "feedback_summary_zip",
+                None
+            )
+
+
+        # =====================================================
+        # READ CSV
+        # =====================================================
+
+        try:
+
+            evaluation_df = pd.read_csv(
+                io.BytesIO(
+                    file_bytes
+                )
+            )
 
         except Exception as e:
 
             st.error(
-                "Could not load encrypted presenter "
-                f"information: {e}"
+                f"Could not read the REDCap CSV: {e}"
             )
 
-            st.stop()
+            evaluation_df = None
 
 
-    # =========================================================
-    # LOAD SAVED DATA
-    # =========================================================
-
-    saved_sessions = (
-        load_saved_sessions()
-    )
+        if evaluation_df is not None:
 
 
-    # =========================================================
-    # SESSION INFORMATION
-    # =========================================================
+            # =================================================
+            # REQUIRED COLUMNS
+            # =================================================
 
-    st.subheader(
-        "Session Information"
-    )
-
-
-    # =========================================================
-    # PRESENTER DROPDOWN
-    # =========================================================
-
-    presenter_options = (
-
-        sorted(
-            saved_sessions.keys()
-        )
-
-        + [
-            OTHER_OPTION
-        ]
-    )
-
-
-    selected_presenter = st.selectbox(
-        "Presenter",
-        options=presenter_options,
-        index=None,
-        placeholder="Select presenter...",
-        key="feedback_presenter_select"
-    )
-
-
-    presenter = ""
-    username = ""
-    session_title = ""
-
-    manual_presenter = False
-    manual_username = False
-    manual_title = False
-
-
-    # =========================================================
-    # NEW / MANUAL PRESENTER
-    # =========================================================
-
-    if (
-        selected_presenter
-        == OTHER_OPTION
-    ):
-
-        manual_presenter = True
-        manual_username = True
-
-
-        presenter = st.text_input(
-            "Presenter name",
-            value="",
-            placeholder=(
-                "Enter presenter name"
-            ),
-            key=(
-                "manual_feedback_presenter"
-            )
-        )
-
-
-        username = st.text_input(
-            "Username",
-            value="",
-            placeholder=(
-                "Enter presenter username"
-            ),
-            key=(
-                "manual_feedback_username"
-            )
-        )
-
-
-    # =========================================================
-    # EXISTING PRESENTER
-    # =========================================================
-
-    elif selected_presenter:
-
-        presenter = (
-            selected_presenter
-        )
-
-
-        presenter_info = (
-            saved_sessions.get(
-                presenter,
-                {
-                    "username": "",
-                    "sessions": []
-                }
-            )
-        )
-
-
-        stored_username = str(
-            presenter_info.get(
+            required_columns = {
                 "username",
-                ""
-            )
-        ).strip()
+                "presenter",
+                "title",
+                "date",
+                "par_number",
+            }
 
 
-        # -----------------------------------------------------
-        # Username already stored
-        # -----------------------------------------------------
-
-        if stored_username:
-
-            username = (
-                stored_username
-            )
-
-
-            st.text_input(
-                "Username",
-                value=username,
-                disabled=True,
-                key=(
-                    "existing_username_"
-                    + widget_suffix(
-                        presenter
-                    )
+            missing_columns = (
+                required_columns
+                - set(
+                    evaluation_df.columns
                 )
             )
 
 
-        # -----------------------------------------------------
-        # Old presenter without saved username
-        # -----------------------------------------------------
+            if missing_columns:
 
-        else:
-
-            manual_username = True
-
-
-            username = st.text_input(
-                "Username",
-                value="",
-                placeholder=(
-                    "Enter presenter username"
-                ),
-                key=(
-                    "missing_username_"
-                    + widget_suffix(
-                        presenter
-                    )
-                )
-            )
-
-
-    # =========================================================
-    # SESSION TITLE
-    # =========================================================
-
-    if presenter:
-
-        # -----------------------------------------------------
-        # EXISTING PRESENTER
-        # -----------------------------------------------------
-
-        if (
-            presenter
-            in saved_sessions
-        ):
-
-            presenter_sessions = (
-                saved_sessions[
-                    presenter
-                ].get(
-                    "sessions",
-                    []
-                )
-            )
-
-
-            title_options = (
-
-                sorted(
-                    presenter_sessions
-                )
-
-                + [
-                    OTHER_OPTION
-                ]
-            )
-
-
-            selected_title = st.selectbox(
-                "Session Title",
-                options=title_options,
-                index=None,
-                placeholder=(
-                    "Select session title..."
-                ),
-                key=(
-                    "feedback_title_"
-                    + widget_suffix(
-                        presenter
-                    )
-                )
-            )
-
-
-            # -------------------------------------------------
-            # Add new title
-            # -------------------------------------------------
-
-            if (
-                selected_title
-                == OTHER_OPTION
-            ):
-
-                manual_title = True
-
-
-                session_title = (
-                    st.text_input(
-                        "Session title",
-                        value="",
-                        placeholder=(
-                            "Enter session title"
-                        ),
-                        key=(
-                            "manual_title_"
-                            + widget_suffix(
-                                presenter
-                            )
+                st.error(
+                    "The REDCap export is missing "
+                    "required column(s): "
+                    + ", ".join(
+                        sorted(
+                            missing_columns
                         )
                     )
                 )
 
 
-            elif selected_title:
+            else:
 
-                session_title = (
-                    selected_title
-                )
 
-
-        # -----------------------------------------------------
-        # BRAND NEW PRESENTER
-        # -----------------------------------------------------
-
-        else:
-
-            manual_title = True
-
-
-            session_title = (
-                st.text_input(
-                    "Session Title",
-                    value="",
-                    placeholder=(
-                        "Enter session title"
-                    ),
-                    key=(
-                        "new_presenter_"
-                        "session_title"
-                    )
-                )
-            )
-
-
-    # =========================================================
-    # NO PRESENTER SELECTED
-    # =========================================================
-
-    else:
-
-        st.selectbox(
-            "Session Title",
-            options=[],
-            index=None,
-            placeholder=(
-                "Select a presenter first..."
-            ),
-            disabled=True,
-            key=(
-                "disabled_feedback_"
-                "session_title"
-            )
-        )
-
-
-    # =========================================================
-    # DATE
-    # =========================================================
-
-    session_date = st.date_input(
-        "Session Date",
-        value=None,
-        format="MM/DD/YYYY",
-        key="feedback_session_date"
-    )
-
-
-    # ---------------------------------------------------------
-    # REDCap requires YYYY-MM-DD for URL prefill
-    # ---------------------------------------------------------
-
-    date_for_redcap = (
-
-        session_date.strftime(
-            "%Y-%m-%d"
-        )
-
-        if session_date
-
-        else ""
-    )
-
-
-    # ---------------------------------------------------------
-    # Friendly date shown on PDF
-    # ---------------------------------------------------------
-
-    session_date_display = (
-
-        session_date.strftime(
-            "%m/%d/%Y"
-        )
-
-        if session_date
-
-        else ""
-    )
-
-
-    # =========================================================
-    # SAVE NEW PRESENTER / USERNAME / SESSION
-    # =========================================================
-
-    if (
-        username.strip()
-        and presenter.strip()
-        and session_title.strip()
-        and (
-            manual_presenter
-            or manual_username
-            or manual_title
-        )
-    ):
-
-        if st.button(
-            "💾 Save Presenter / Session for Future Use",
-            use_container_width=True,
-            key=(
-                "save_feedback_"
-                "presenter_session"
-            )
-        ):
-
-            presenter_clean = (
-                presenter.strip()
-            )
-
-            username_clean = (
-                username.strip()
-            )
-
-            title_clean = (
-                session_title.strip()
-            )
-
-
-            # -------------------------------------------------
-            # Get latest encrypted copy from GitHub
-            # -------------------------------------------------
-
-            latest_sessions = (
-                load_saved_sessions()
-            )
-
-
-            # -------------------------------------------------
-            # Create presenter if necessary
-            # -------------------------------------------------
-
-            if (
-                presenter_clean
-                not in latest_sessions
-            ):
-
-                latest_sessions[
-                    presenter_clean
-                ] = {
-
-                    "username":
-                        username_clean,
-
-                    "sessions":
-                        []
-                }
-
-
-            presenter_entry = (
-                latest_sessions[
-                    presenter_clean
-                ]
-            )
-
-
-            if not isinstance(
-                presenter_entry,
-                dict
-            ):
-
-                presenter_entry = {
-
-                    "username":
-                        username_clean,
-
-                    "sessions":
-                        []
-                }
-
-
-            # -------------------------------------------------
-            # Save username
-            # -------------------------------------------------
-
-            presenter_entry[
-                "username"
-            ] = username_clean
-
-
-            # -------------------------------------------------
-            # Save session title
-            # -------------------------------------------------
-
-            existing_titles = (
-                presenter_entry.get(
-                    "sessions",
-                    []
-                )
-            )
-
-
-            if not isinstance(
-                existing_titles,
-                list
-            ):
-
-                existing_titles = []
-
-
-            if (
-                title_clean
-                not in existing_titles
-            ):
-
-                existing_titles.append(
-                    title_clean
-                )
-
-
-            presenter_entry[
-                "sessions"
-            ] = sorted(
-                set(
-                    existing_titles
-                )
-            )
-
-
-            latest_sessions[
-                presenter_clean
-            ] = presenter_entry
-
-
-            # -------------------------------------------------
-            # Encrypt and save to GitHub
-            # -------------------------------------------------
-
-            success = (
-                save_saved_sessions(
-                    latest_sessions,
-                    commit_message=(
-                        "Update encrypted session "
-                        "feedback option"
-                    )
-                )
-            )
-
-
-            if success:
-
-                st.success(
-                    f"Saved {presenter_clean} — "
-                    f"{title_clean}"
-                )
-
-                st.rerun()
-
-
-    # =========================================================
-    # CREATE FEEDBACK LINK
-    # =========================================================
-
-    if (
-        username.strip()
-        and presenter.strip()
-        and session_title.strip()
-    ):
-
-        params = {
-
-            "username":
-                username.strip(),
-
-            "presenter":
-                presenter.strip(),
-
-            "title":
-                session_title.strip(),
-        }
-
-
-        if date_for_redcap:
-
-            params[
-                "date"
-            ] = date_for_redcap
-
-
-        encoded_params = (
-            urllib.parse.urlencode(
-                params
-            )
-        )
-
-
-        feedback_url = (
-            BASE_SURVEY_URL
-            + "&"
-            + encoded_params
-        )
-
-
-        # =====================================================
-        # CREATE QR CODE
-        # =====================================================
-
-        qr = qrcode.QRCode(
-
-            version=None,
-
-            error_correction=(
-                qrcode.constants
-                .ERROR_CORRECT_M
-            ),
-
-            box_size=10,
-
-            border=4,
-        )
-
-
-        qr.add_data(
-            feedback_url
-        )
-
-        qr.make(
-            fit=True
-        )
-
-
-        qr_image = qr.make_image(
-            fill_color="black",
-            back_color="white"
-        )
-
-
-        qr_buffer = io.BytesIO()
-
-
-        qr_image.save(
-            qr_buffer,
-            format="PNG"
-        )
-
-
-        qr_buffer.seek(
-            0
-        )
-
-
-        qr_bytes = (
-            qr_buffer.getvalue()
-        )
-
-
-        # =====================================================
-        # DISPLAY LINK + QR
-        # =====================================================
-
-        st.divider()
-
-        st.subheader(
-            "Student Feedback Link"
-        )
-
-
-        st.image(
-            qr_bytes,
-            width=300
-        )
-
-
-        st.markdown(
-            f"### [Open Session Feedback Survey]"
-            f"({feedback_url})"
-        )
-
-
-        # =====================================================
-        # CREATE PDF
-        # =====================================================
-
-        def create_feedback_pdf(
-            presenter,
-            session_title,
-            session_date,
-            feedback_url,
-            qr_bytes
-        ):
-
-            pdf_buffer = (
-                io.BytesIO()
-            )
-
-
-            c = canvas.Canvas(
-                pdf_buffer,
-                pagesize=letter
-            )
-
-
-            page_width, page_height = (
-                letter
-            )
-
-
-            # ---------------------------------------------
-            # TITLE
-            # ---------------------------------------------
-
-            c.setFont(
-                "Helvetica-Bold",
-                22
-            )
-
-
-            c.drawCentredString(
-                page_width / 2,
-                page_height - 90,
-                "Session Feedback"
-            )
-
-
-            # ---------------------------------------------
-            # SESSION TITLE
-            # ---------------------------------------------
-
-            c.setFont(
-                "Helvetica-Bold",
-                16
-            )
-
-
-            c.drawCentredString(
-                page_width / 2,
-                page_height - 125,
-                session_title
-            )
-
-
-            # ---------------------------------------------
-            # PRESENTER
-            # ---------------------------------------------
-
-            c.setFont(
-                "Helvetica",
-                13
-            )
-
-
-            c.drawCentredString(
-                page_width / 2,
-                page_height - 150,
-                presenter
-            )
-
-
-            # ---------------------------------------------
-            # DATE
-            # ---------------------------------------------
-
-            if session_date.strip():
-
-                c.setFont(
-                    "Helvetica",
-                    12
-                )
-
-
-                c.drawCentredString(
-                    page_width / 2,
-                    page_height - 172,
-                    session_date
-                )
-
-
-            # ---------------------------------------------
-            # INSTRUCTIONS
-            # ---------------------------------------------
-
-            c.setFont(
-                "Helvetica",
-                13
-            )
-
-
-            c.drawCentredString(
-                page_width / 2,
-                page_height - 215,
-                (
-                    "Please scan the QR code "
-                    "to provide feedback."
-                )
-            )
-
-
-            # ---------------------------------------------
-            # QR CODE
-            # ---------------------------------------------
-
-            qr_stream = io.BytesIO(
-                qr_bytes
-            )
-
-
-            qr_reader = ImageReader(
-                qr_stream
-            )
-
-
-            qr_size = 250
-
-
-            c.drawImage(
-                qr_reader,
-                (
-                    page_width
-                    - qr_size
-                ) / 2,
-                page_height - 500,
-                width=qr_size,
-                height=qr_size,
-                preserveAspectRatio=True
-            )
-
-
-            # ---------------------------------------------
-            # CLICKABLE LINK
-            # ---------------------------------------------
-
-            link_text = (
-                "Click here to open "
-                "the feedback survey"
-            )
-
-
-            c.setFont(
-                "Helvetica-Bold",
-                12
-            )
-
-
-            link_width = (
-                c.stringWidth(
-                    link_text,
-                    "Helvetica-Bold",
-                    12
-                )
-            )
-
-
-            link_x = (
-                page_width
-                - link_width
-            ) / 2
-
-
-            link_y = (
-                page_height
-                - 535
-            )
-
-
-            c.drawString(
-                link_x,
-                link_y,
-                link_text
-            )
-
-
-            c.linkURL(
-                feedback_url,
-                (
-                    link_x,
-                    link_y - 3,
-                    link_x + link_width,
-                    link_y + 12
-                ),
-                relative=0
-            )
-
-
-            c.save()
-
-
-            pdf_buffer.seek(
-                0
-            )
-
-
-            return (
-                pdf_buffer.getvalue()
-            )
-
-
-        # =====================================================
-        # GENERATE PDF
-        # =====================================================
-
-        pdf_bytes = (
-            create_feedback_pdf(
-                presenter,
-                session_title,
-                session_date_display,
-                feedback_url,
-                qr_bytes
-            )
-        )
-
-
-        # =====================================================
-        # DOWNLOAD PDF
-        # =====================================================
-
-        st.download_button(
-            "📄 Download Feedback QR PDF",
-            data=pdf_bytes,
-            file_name=(
-                "session_feedback_qr.pdf"
-            ),
-            mime="application/pdf",
-            use_container_width=True
-        )
-
-
-    # =========================================================
-    # INCOMPLETE INFORMATION
-    # =========================================================
-
-    else:
-
-        missing_items = []
-
-
-        if not presenter.strip():
-
-            missing_items.append(
-                "presenter"
-            )
-
-
-        if not username.strip():
-
-            missing_items.append(
-                "username"
-            )
-
-
-        if not session_title.strip():
-
-            missing_items.append(
-                "session title"
-            )
-
-
-        if missing_items:
-
-            st.info(
-                "Complete the "
-                + ", ".join(
-                    missing_items
-                )
-                + " to create the feedback link."
-            )
-
-
-    # =========================================================
-    # MANAGE SAVED PRESENTERS & SESSIONS
-    # =========================================================
-
-    with st.expander(
-        "⚙️ Manage Saved Presenters & Sessions"
-    ):
-
-        if not github_configured:
-
-            st.warning(
-                "GitHub persistence is not configured. "
-                "Add the [github] section to "
-                "Streamlit Secrets."
-            )
-
-
-        elif not saved_sessions:
-
-            st.info(
-                "There are currently "
-                "no saved presenters."
-            )
-
-
-        else:
-
-            st.write(
-                "Update a username, remove "
-                "a saved session title, "
-                "or remove a presenter."
-            )
-
-
-            # =================================================
-            # SELECT PRESENTER
-            # =================================================
-
-            manage_presenter = st.selectbox(
-                "Presenter to manage",
-                options=sorted(
-                    saved_sessions.keys()
-                ),
-                index=None,
-                placeholder=(
-                    "Select presenter..."
-                ),
-                key=(
-                    "manage_feedback_presenter"
-                )
-            )
-
-
-            if manage_presenter:
-
-                manage_info = (
-                    saved_sessions.get(
-                        manage_presenter,
-                        {
-                            "username": "",
-                            "sessions": []
-                        }
-                    )
-                )
-
-
-                manage_suffix = (
-                    widget_suffix(
-                        manage_presenter
-                    )
-                )
-
-
-                # =================================================
-                # UPDATE USERNAME
-                # =================================================
-
-                st.markdown(
-                    "#### Username"
-                )
-
-
-                current_username = str(
-                    manage_info.get(
-                        "username",
-                        ""
-                    )
-                ).strip()
-
-
-                updated_username = (
-                    st.text_input(
-                        "Username",
-                        value=current_username,
-                        key=(
-                            "manage_username_"
-                            + manage_suffix
-                        )
-                    )
-                )
-
+                # =============================================
+                # COMPLETED EVALUATIONS ONLY
+                # =============================================
 
                 if (
-                    updated_username.strip()
-                    != current_username
+                    "form_1_complete"
+                    in evaluation_df.columns
                 ):
 
-                    if st.button(
-                        "💾 Update Username",
-                        use_container_width=True,
-                        key=(
-                            "update_username_"
-                            + manage_suffix
+                    evaluation_df[
+                        "form_1_complete"
+                    ] = pd.to_numeric(
+                        evaluation_df[
+                            "form_1_complete"
+                        ],
+                        errors="coerce"
+                    )
+
+
+                    original_count = len(
+                        evaluation_df
+                    )
+
+
+                    evaluation_df = (
+                        evaluation_df[
+                            evaluation_df[
+                                "form_1_complete"
+                            ] == 2
+                        ]
+                        .copy()
+                    )
+
+
+                    removed_count = (
+                        original_count
+                        - len(
+                            evaluation_df
                         )
-                    ):
+                    )
 
-                        if not (
-                            updated_username.strip()
-                        ):
 
-                            st.warning(
-                                "Username cannot be blank."
+                    if removed_count > 0:
+
+                        st.caption(
+                            f"{removed_count} incomplete or "
+                            "unverified evaluation(s) excluded."
+                        )
+
+
+                # =============================================
+                # CLEAN PRESENTER NAMES
+                # =============================================
+
+                evaluation_df = (
+                    evaluation_df[
+                        evaluation_df[
+                            "presenter"
+                        ].notna()
+                    ]
+                    .copy()
+                )
+
+
+                evaluation_df[
+                    "presenter"
+                ] = (
+                    evaluation_df[
+                        "presenter"
+                    ]
+                    .astype(str)
+                    .str.strip()
+                )
+
+
+                evaluation_df = (
+                    evaluation_df[
+                        evaluation_df[
+                            "presenter"
+                        ] != ""
+                    ]
+                    .copy()
+                )
+
+
+                # =============================================
+                # DETECT RATING QUESTIONS
+                # =============================================
+
+                detected_questions = sorted(
+                    [
+                        col
+                        for col
+                        in evaluation_df.columns
+                        if re.fullmatch(
+                            r"q\d+",
+                            str(
+                                col
+                            )
+                        )
+                    ],
+                    key=numeric_field_sort
+                )
+
+
+                # =============================================
+                # DETECT NARRATIVE COMMENT FIELDS
+                # =============================================
+
+                detected_comments = sorted(
+                    [
+                        col
+                        for col
+                        in evaluation_df.columns
+                        if re.fullmatch(
+                            r"session_c\d+",
+                            str(
+                                col
+                            )
+                        )
+                    ],
+                    key=numeric_field_sort
+                )
+
+
+                # =============================================
+                # DEFAULT QUESTION / COMMENT MAPPINGS
+                # =============================================
+                #
+                # These remain invisible during normal use.
+                # =============================================
+
+                question_columns = (
+                    detected_questions
+                )
+
+
+                question_labels = {
+                    field:
+                        DEFAULT_QUESTION_LABELS.get(
+                            field,
+                            field
+                        )
+                    for field
+                    in detected_questions
+                }
+
+
+                comment_columns = (
+                    detected_comments
+                )
+
+
+                comment_labels = {
+                    field:
+                        DEFAULT_COMMENT_LABELS.get(
+                            field,
+                            field
+                        )
+                    for field
+                    in detected_comments
+                }
+
+
+                # =============================================
+                # UPLOAD SUMMARY
+                # =============================================
+
+                presenter_list = sorted(
+                    evaluation_df[
+                        "presenter"
+                    ]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+
+
+                col1, col2, col3 = st.columns(
+                    3
+                )
+
+
+                col1.metric(
+                    "Presenters",
+                    len(
+                        presenter_list
+                    )
+                )
+
+
+                col2.metric(
+                    "Completed Evaluations",
+                    len(
+                        evaluation_df
+                    )
+                )
+
+
+                col3.metric(
+                    "Rating Questions",
+                    len(
+                        detected_questions
+                    )
+                )
+
+
+                # =============================================
+                # TROUBLESHOOTING
+                # =============================================
+                #
+                # Dataframes are hidden during normal use.
+                # Open this section only when needed.
+                # =============================================
+
+                with st.expander(
+                    "🛠 Troubleshooting",
+                    expanded=False
+                ):
+
+                    show_question_mapping = st.toggle(
+                        "Show REDCap question mapping",
+                        value=False,
+                        key=(
+                            "feedback_summary_"
+                            "show_mapping"
+                        )
+                    )
+
+
+                    if show_question_mapping:
+
+                        st.caption(
+                            "Use this only to verify or "
+                            "temporarily adjust how REDCap "
+                            "fields are mapped to the report."
+                        )
+
+
+                        # =====================================
+                        # RATING QUESTIONS
+                        # =====================================
+
+                        st.markdown(
+                            "#### Rating Questions"
+                        )
+
+
+                        if detected_questions:
+
+                            question_config = pd.DataFrame(
+                                {
+                                    "Include": [
+                                        True
+                                        for _ in
+                                        detected_questions
+                                    ],
+
+                                    "REDCap Field":
+                                        detected_questions,
+
+                                    (
+                                        "Question / "
+                                        "Evaluation Item"
+                                    ): [
+                                        DEFAULT_QUESTION_LABELS
+                                        .get(
+                                            field,
+                                            field
+                                        )
+                                        for field
+                                        in detected_questions
+                                    ],
+                                }
+                            )
+
+
+                            edited_question_config = (
+                                st.data_editor(
+                                    question_config,
+                                    hide_index=True,
+                                    use_container_width=True,
+                                    disabled=[
+                                        "REDCap Field"
+                                    ],
+                                    key=(
+                                        "feedback_summary_"
+                                        "question_editor"
+                                    )
+                                )
+                            )
+
+
+                            included_question_rows = (
+                                edited_question_config[
+                                    edited_question_config[
+                                        "Include"
+                                    ] == True
+                                ]
+                            )
+
+
+                            question_columns = (
+                                included_question_rows[
+                                    "REDCap Field"
+                                ]
+                                .tolist()
+                            )
+
+
+                            question_labels = dict(
+                                zip(
+                                    included_question_rows[
+                                        "REDCap Field"
+                                    ],
+
+                                    included_question_rows[
+                                        (
+                                            "Question / "
+                                            "Evaluation Item"
+                                        )
+                                    ]
+                                )
                             )
 
 
                         else:
 
-                            latest_sessions = (
-                                load_saved_sessions()
+                            st.warning(
+                                "No q### rating fields "
+                                "were detected."
                             )
 
 
-                            if (
-                                manage_presenter
-                                in latest_sessions
-                            ):
+                        # =====================================
+                        # NARRATIVE COMMENTS
+                        # =====================================
 
-                                latest_sessions[
-                                    manage_presenter
-                                ][
-                                    "username"
-                                ] = (
-                                    updated_username
-                                    .strip()
-                                )
-
-
-                                success = (
-                                    save_saved_sessions(
-                                        latest_sessions,
-                                        commit_message=(
-                                            "Update encrypted "
-                                            "presenter username"
-                                        )
-                                    )
-                                )
-
-
-                                if success:
-
-                                    st.success(
-                                        "Username updated."
-                                    )
-
-                                    st.rerun()
-
-
-                # =================================================
-                # REMOVE INDIVIDUAL SESSION
-                # =================================================
-
-                st.divider()
-
-                st.markdown(
-                    "#### Saved Sessions"
-                )
-
-
-                presenter_titles = (
-                    manage_info.get(
-                        "sessions",
-                        []
-                    )
-                )
-
-
-                if presenter_titles:
-
-                    remove_title = (
-                        st.selectbox(
-                            "Session title to remove",
-                            options=(
-                                presenter_titles
-                            ),
-                            index=None,
-                            placeholder=(
-                                "Select session title..."
-                            ),
-                            key=(
-                                "remove_title_"
-                                + manage_suffix
-                            )
+                        st.markdown(
+                            "#### Narrative Comment Questions"
                         )
-                    )
 
 
-                    if remove_title:
+                        if detected_comments:
 
-                        if st.button(
-                            "🗑️ Remove This Session",
-                            use_container_width=True,
-                            key=(
-                                "remove_session_"
-                                + manage_suffix
+                            comment_config = pd.DataFrame(
+                                {
+                                    "Include": [
+                                        True
+                                        for _ in
+                                        detected_comments
+                                    ],
+
+                                    "REDCap Field":
+                                        detected_comments,
+
+                                    "Comment Prompt": [
+                                        DEFAULT_COMMENT_LABELS
+                                        .get(
+                                            field,
+                                            field
+                                        )
+                                        for field
+                                        in detected_comments
+                                    ],
+                                }
                             )
-                        ):
-
-                            latest_sessions = (
-                                load_saved_sessions()
-                            )
 
 
-                            if (
-                                manage_presenter
-                                in latest_sessions
-                            ):
-
-                                existing_titles = (
-                                    latest_sessions[
-                                        manage_presenter
-                                    ].get(
-                                        "sessions",
-                                        []
+                            edited_comment_config = (
+                                st.data_editor(
+                                    comment_config,
+                                    hide_index=True,
+                                    use_container_width=True,
+                                    disabled=[
+                                        "REDCap Field"
+                                    ],
+                                    key=(
+                                        "feedback_summary_"
+                                        "comment_editor"
                                     )
                                 )
+                            )
 
 
-                                latest_sessions[
-                                    manage_presenter
-                                ][
-                                    "sessions"
-                                ] = [
-
-                                    title
-
-                                    for title
-                                    in existing_titles
-
-                                    if (
-                                        title
-                                        != remove_title
-                                    )
+                            included_comment_rows = (
+                                edited_comment_config[
+                                    edited_comment_config[
+                                        "Include"
+                                    ] == True
                                 ]
+                            )
 
 
-                                success = (
-                                    save_saved_sessions(
-                                        latest_sessions,
-                                        commit_message=(
-                                            "Remove encrypted "
-                                            "session feedback option"
-                                        )
-                                    )
+                            comment_columns = (
+                                included_comment_rows[
+                                    "REDCap Field"
+                                ]
+                                .tolist()
+                            )
+
+
+                            comment_labels = dict(
+                                zip(
+                                    included_comment_rows[
+                                        "REDCap Field"
+                                    ],
+
+                                    included_comment_rows[
+                                        "Comment Prompt"
+                                    ]
                                 )
+                            )
 
 
-                                if success:
+                        else:
 
-                                    st.success(
-                                        "Session removed."
-                                    )
-
-                                    st.rerun()
-
-
-                else:
-
-                    st.caption(
-                        "This presenter has no "
-                        "saved session titles."
-                    )
+                            st.info(
+                                "No narrative comment fields "
+                                "were detected."
+                            )
 
 
-                # =================================================
-                # REMOVE ENTIRE PRESENTER
-                # =================================================
+                # =============================================
+                # SELECT PRESENTERS
+                # =============================================
 
-                st.divider()
-
-                st.markdown(
-                    "#### Remove Presenter"
+                st.subheader(
+                    "Presenters"
                 )
 
 
-                confirm_remove = (
-                    st.checkbox(
-                        (
-                            f"Remove {manage_presenter} "
-                            "and all saved information"
-                        ),
+                presenters_to_generate = (
+                    st.multiselect(
+                        "Presenters to include",
+                        options=presenter_list,
+                        default=presenter_list,
                         key=(
-                            "confirm_remove_"
-                            + manage_suffix
+                            "feedback_summary_"
+                            "presenter_selection"
                         )
                     )
                 )
 
 
-                if confirm_remove:
+                # =============================================
+                # OPTIONAL NARRATIVE SUMMARIES
+                # =============================================
 
-                    if st.button(
-                        "🗑️ Remove Presenter",
-                        type="primary",
-                        use_container_width=True,
-                        key=(
-                            "remove_presenter_"
-                            + manage_suffix
-                        )
+                custom_comment_summaries = {}
+
+
+                if presenters_to_generate:
+
+                    with st.expander(
+                        "✏️ Optional Narrative Comment Summaries"
                     ):
 
-                        latest_sessions = (
-                            load_saved_sessions()
+                        st.caption(
+                            "Optional. Leave blank and the "
+                            "report will automatically state "
+                            "how many evaluations contained "
+                            "written feedback and how many "
+                            "comments were submitted."
                         )
 
 
-                        if (
-                            manage_presenter
-                            in latest_sessions
+                        for person in (
+                            presenters_to_generate
                         ):
 
-                            del latest_sessions[
-                                manage_presenter
-                            ]
-
-
-                            success = (
-                                save_saved_sessions(
-                                    latest_sessions,
-                                    commit_message=(
-                                        "Remove encrypted "
-                                        "session feedback presenter"
+                            custom_comment_summaries[
+                                person
+                            ] = st.text_area(
+                                person,
+                                value="",
+                                placeholder=(
+                                    "Optional promotion-ready "
+                                    "summary of recurring themes..."
+                                ),
+                                key=(
+                                    "feedback_comment_summary_"
+                                    + safe_filename(
+                                        person
                                     )
                                 )
                             )
 
 
-                            if success:
+                # =============================================
+                # GENERATE REPORTS
+                # =============================================
 
-                                st.success(
-                                    f"{manage_presenter} removed."
+                if st.button(
+                    "📄 Create Presenter Word Summaries",
+                    type="primary",
+                    use_container_width=True,
+                    key=(
+                        "create_session_feedback_"
+                        "summary_reports"
+                    )
+                ):
+
+
+                    if not presenters_to_generate:
+
+                        st.warning(
+                            "Select at least one presenter."
+                        )
+
+
+                    else:
+
+                        generated_reports = {}
+
+
+                        # =====================================
+                        # CREATE WORD DOCUMENTS
+                        # =====================================
+
+                        for presenter_name in (
+                            presenters_to_generate
+                        ):
+
+                            report_bytes = (
+                                create_presenter_word_report(
+                                    evaluation_df=(
+                                        evaluation_df
+                                    ),
+
+                                    presenter_name=(
+                                        presenter_name
+                                    ),
+
+                                    question_columns=(
+                                        question_columns
+                                    ),
+
+                                    question_labels=(
+                                        question_labels
+                                    ),
+
+                                    comment_columns=(
+                                        comment_columns
+                                    ),
+
+                                    comment_labels=(
+                                        comment_labels
+                                    ),
+
+                                    custom_comment_summary=(
+                                        custom_comment_summaries
+                                        .get(
+                                            presenter_name,
+                                            ""
+                                        )
+                                    ),
+                                )
+                            )
+
+
+                            filename = (
+                                safe_filename(
+                                    presenter_name
+                                )
+                                + "_Teaching_Evaluation_"
+                                + "Summary.docx"
+                            )
+
+
+                            generated_reports[
+                                presenter_name
+                            ] = {
+                                "filename":
+                                    filename,
+
+                                "bytes":
+                                    report_bytes,
+                            }
+
+
+                        # =====================================
+                        # CREATE MASTER CSV
+                        # =====================================
+
+                        master_csv_bytes = (
+                            create_master_summary_csv(
+                                evaluation_df=(
+                                    evaluation_df
+                                ),
+
+                                presenters=(
+                                    presenters_to_generate
+                                ),
+
+                                question_columns=(
+                                    question_columns
+                                ),
+
+                                question_labels=(
+                                    question_labels
+                                ),
+
+                                comment_columns=(
+                                    comment_columns
+                                ),
+
+                                comment_labels=(
+                                    comment_labels
+                                ),
+
+                                custom_comment_summaries=(
+                                    custom_comment_summaries
+                                ),
+                            )
+                        )
+
+
+                        # =====================================
+                        # CREATE ZIP PACKAGE
+                        # =====================================
+
+                        zip_buffer = io.BytesIO()
+
+
+                        with zipfile.ZipFile(
+                            zip_buffer,
+                            mode="w",
+                            compression=(
+                                zipfile.ZIP_DEFLATED
+                            )
+                        ) as zip_file:
+
+
+                            # ---------------------------------
+                            # Add Word reports
+                            # ---------------------------------
+
+                            for report_data in (
+                                generated_reports.values()
+                            ):
+
+                                zip_file.writestr(
+                                    report_data[
+                                        "filename"
+                                    ],
+
+                                    report_data[
+                                        "bytes"
+                                    ]
                                 )
 
-                                st.rerun()
+
+                            # ---------------------------------
+                            # Add master CSV
+                            # ---------------------------------
+
+                            zip_file.writestr(
+                                (
+                                    "Presenter_Teaching_"
+                                    "Evaluation_Summary.csv"
+                                ),
+
+                                master_csv_bytes
+                            )
+
+
+                        zip_buffer.seek(
+                            0
+                        )
+
+
+                        # =====================================
+                        # STORE FILES IN SESSION STATE
+                        # =====================================
+
+                        st.session_state[
+                            "feedback_summary_reports"
+                        ] = generated_reports
+
+
+                        st.session_state[
+                            "feedback_summary_zip"
+                        ] = zip_buffer.getvalue()
+
+
+                # =============================================
+                # DOWNLOAD GENERATED FILES
+                # =============================================
+
+                if (
+                    "feedback_summary_reports"
+                    in st.session_state
+                ):
+
+                    reports = st.session_state[
+                        "feedback_summary_reports"
+                    ]
+
+
+                    st.success(
+                        f"Created {len(reports)} "
+                        "presenter Word summary file(s)."
+                    )
+
+
+                    # =========================================
+                    # INDIVIDUAL WORD DOWNLOADS
+                    # =========================================
+
+                    for (
+                        presenter_name,
+                        report_data
+                    ) in reports.items():
+
+
+                        st.download_button(
+                            label=(
+                                "⬇️ Download "
+                                f"{presenter_name}"
+                            ),
+
+                            data=(
+                                report_data[
+                                    "bytes"
+                                ]
+                            ),
+
+                            file_name=(
+                                report_data[
+                                    "filename"
+                                ]
+                            ),
+
+                            mime=(
+                                "application/"
+                                "vnd.openxmlformats-officedocument."
+                                "wordprocessingml.document"
+                            ),
+
+                            use_container_width=True,
+
+                            key=(
+                                "download_feedback_summary_"
+                                + safe_filename(
+                                    presenter_name
+                                )
+                            )
+                        )
+
+
+                    # =========================================
+                    # COMPLETE ZIP DOWNLOAD
+                    # =========================================
+
+                    st.download_button(
+                        "📦 Download Complete Summary Package",
+
+                        data=(
+                            st.session_state[
+                                "feedback_summary_zip"
+                            ]
+                        ),
+
+                        file_name=(
+                            "Presenter_Teaching_"
+                            "Evaluation_Summaries.zip"
+                        ),
+
+                        mime="application/zip",
+
+                        use_container_width=True,
+
+                        key=(
+                            "download_all_"
+                            "feedback_summaries"
+                        )
+                    )
+
+
