@@ -1884,7 +1884,6 @@ elif instrument == "Oasis Reminder":
             file_name="normalized_completed_oasis.csv",
             mime="text/csv",
         )
-    
 elif instrument == "Session Feedback Link Creator":
     st.header("📋 Session Feedback Link Creator")
 
@@ -1892,8 +1891,11 @@ elif instrument == "Session Feedback Link Creator":
     import json
     import base64
     import urllib.parse
+    import hashlib
     import requests
     import qrcode
+
+    from cryptography.fernet import Fernet, InvalidToken
 
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import letter
@@ -1909,28 +1911,40 @@ elif instrument == "Session Feedback Link Creator":
         "?s=3HLWTMYWDF33479A"
     )
 
+    # ---------------------------------------------------------
+    # NEW encrypted file
+    # ---------------------------------------------------------
+
     GITHUB_DATA_FILE = (
+        "data/session_feedback_options.enc"
+    )
+
+    # ---------------------------------------------------------
+    # OLD plaintext file
+    #
+    # Used only for one-time migration if the encrypted file
+    # does not exist yet.
+    # ---------------------------------------------------------
+
+    LEGACY_GITHUB_DATA_FILE = (
         "data/session_feedback_options.json"
     )
 
-    OTHER_OPTION = "➕ Other / enter manually"
+    OTHER_OPTION = (
+        "➕ Other / enter manually"
+    )
 
 
     # =========================================================
-    # DEFAULT SAVED DATA
-    # =========================================================
-    #
-    # NEW FORMAT:
-    #
-    # Presenter
-    #   -> username
-    #   -> list of session titles
-    #
+    # DEFAULT DATA
     # =========================================================
 
     DEFAULT_SESSIONS = {
+
         "Conrad Krawiec": {
+
             "username": "czk11",
+
             "sessions": [
                 "Residency Journal Club"
             ]
@@ -1939,25 +1953,87 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # GITHUB SETTINGS
+    # STREAMLIT ENCRYPTION KEY
+    # =========================================================
+    #
+    # Streamlit Secrets:
+    #
+    # [feedback_encryption]
+    # key = "YOUR_FERNET_KEY"
+    #
     # =========================================================
 
     try:
 
-        GITHUB_TOKEN = (
-            st.secrets["github"]["token"]
+        ENCRYPTION_KEY = str(
+            st.secrets[
+                "feedback_encryption"
+            ][
+                "key"
+            ]
+        ).strip()
+
+
+        cipher = Fernet(
+            ENCRYPTION_KEY.encode(
+                "utf-8"
+            )
         )
 
-        GITHUB_REPO = (
-            st.secrets["github"]["repo"]
+
+    except Exception:
+
+        st.error(
+            "Session Feedback encryption is not configured. "
+            "Add [feedback_encryption] and its key to "
+            "Streamlit Secrets."
         )
 
-        GITHUB_BRANCH = (
-            st.secrets["github"].get(
+        st.stop()
+
+
+    # =========================================================
+    # GITHUB SETTINGS
+    # =========================================================
+    #
+    # Streamlit Secrets:
+    #
+    # [github]
+    # token = "github_pat_..."
+    # repo = "username/repository"
+    # branch = "main"
+    #
+    # =========================================================
+
+    try:
+
+        GITHUB_TOKEN = str(
+            st.secrets[
+                "github"
+            ][
+                "token"
+            ]
+        ).strip()
+
+
+        GITHUB_REPO = str(
+            st.secrets[
+                "github"
+            ][
+                "repo"
+            ]
+        ).strip()
+
+
+        GITHUB_BRANCH = str(
+            st.secrets[
+                "github"
+            ].get(
                 "branch",
                 "main"
             )
-        )
+        ).strip()
+
 
         github_configured = True
 
@@ -1972,18 +2048,31 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # NORMALIZE SAVED SESSION DATA
+    # SMALL HELPER FOR STREAMLIT WIDGET KEYS
+    # =========================================================
+
+    def widget_suffix(value):
+
+        return hashlib.sha256(
+            str(value).encode(
+                "utf-8"
+            )
+        ).hexdigest()[:12]
+
+
+    # =========================================================
+    # NORMALIZE SAVED DATA
     # =========================================================
     #
-    # This allows your OLD GitHub file to continue working.
+    # Supports BOTH:
     #
-    # OLD:
+    # OLD FORMAT:
     #
     # "Conrad Krawiec": [
     #     "Residency Journal Club"
     # ]
     #
-    # NEW:
+    # NEW FORMAT:
     #
     # "Conrad Krawiec": {
     #     "username": "czk11",
@@ -1994,9 +2083,12 @@ elif instrument == "Session Feedback Link Creator":
     #
     # =========================================================
 
-    def normalize_saved_sessions(data):
+    def normalize_saved_sessions(
+        data
+    ):
 
         cleaned_sessions = {}
+
 
         if not isinstance(
             data,
@@ -2006,7 +2098,9 @@ elif instrument == "Session Feedback Link Creator":
             return cleaned_sessions
 
 
-        for person, info in data.items():
+        for person, info in (
+            data.items()
+        ):
 
             person = str(
                 person
@@ -2014,6 +2108,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             if not person:
+
                 continue
 
 
@@ -2100,7 +2195,89 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # GITHUB HELPER FUNCTIONS
+    # ENCRYPT / DECRYPT
+    # =========================================================
+
+    def encrypt_saved_data(
+        data
+    ):
+
+        # -----------------------------------------------------
+        # Normalize before saving
+        # -----------------------------------------------------
+
+        data = normalize_saved_sessions(
+            data
+        )
+
+
+        # -----------------------------------------------------
+        # Convert dictionary to JSON
+        # -----------------------------------------------------
+
+        json_text = json.dumps(
+            data,
+            ensure_ascii=False,
+            separators=(
+                ",",
+                ":"
+            )
+        )
+
+
+        # -----------------------------------------------------
+        # Encrypt entire JSON document
+        # -----------------------------------------------------
+
+        encrypted_bytes = (
+            cipher.encrypt(
+                json_text.encode(
+                    "utf-8"
+                )
+            )
+        )
+
+
+        return encrypted_bytes.decode(
+            "utf-8"
+        )
+
+
+    def decrypt_saved_data(
+        encrypted_text
+    ):
+
+        # -----------------------------------------------------
+        # Decrypt Fernet token
+        # -----------------------------------------------------
+
+        decrypted_bytes = (
+            cipher.decrypt(
+                encrypted_text.encode(
+                    "utf-8"
+                )
+            )
+        )
+
+
+        # -----------------------------------------------------
+        # Convert decrypted JSON back to dictionary
+        # -----------------------------------------------------
+
+        data = json.loads(
+            decrypted_bytes.decode(
+                "utf-8"
+            )
+        )
+
+
+        return normalize_saved_sessions(
+            data
+        )
+
+
+    # =========================================================
+    # GITHUB HELPERS
     # =========================================================
 
     def github_headers():
@@ -2122,9 +2299,11 @@ elif instrument == "Session Feedback Link Creator":
         file_path
     ):
 
-        encoded_path = urllib.parse.quote(
-            file_path,
-            safe="/"
+        encoded_path = (
+            urllib.parse.quote(
+                file_path,
+                safe="/"
+            )
         )
 
 
@@ -2136,172 +2315,13 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # LOAD SAVED PRESENTERS / SESSIONS
-    # =========================================================
-
-    def load_saved_sessions():
-
-        # -----------------------------------------------------
-        # No GitHub connection
-        # -----------------------------------------------------
-
-        if not github_configured:
-
-            return normalize_saved_sessions(
-                DEFAULT_SESSIONS
-            )
-
-
-        url = github_file_url(
-            GITHUB_DATA_FILE
-        )
-
-
-        try:
-
-            response = requests.get(
-                url,
-                headers=github_headers(),
-                params={
-                    "ref": GITHUB_BRANCH
-                },
-                timeout=15,
-            )
-
-
-            # =================================================
-            # FILE EXISTS
-            # =================================================
-
-            if response.status_code == 200:
-
-                file_info = (
-                    response.json()
-                )
-
-
-                encoded_content = (
-                    file_info.get(
-                        "content",
-                        ""
-                    )
-                )
-
-
-                decoded_content = (
-                    base64.b64decode(
-                        encoded_content
-                    )
-                    .decode(
-                        "utf-8"
-                    )
-                    .strip()
-                )
-
-
-                # Empty GitHub file
-                if not decoded_content:
-
-                    return (
-                        normalize_saved_sessions(
-                            DEFAULT_SESSIONS
-                        )
-                    )
-
-
-                try:
-
-                    data = json.loads(
-                        decoded_content
-                    )
-
-
-                except json.JSONDecodeError:
-
-                    st.warning(
-                        "The saved presenter file "
-                        "contains invalid JSON. "
-                        "Using default values."
-                    )
-
-                    return (
-                        normalize_saved_sessions(
-                            DEFAULT_SESSIONS
-                        )
-                    )
-
-
-                return (
-                    normalize_saved_sessions(
-                        data
-                    )
-                )
-
-
-            # =================================================
-            # FILE DOES NOT EXIST
-            # =================================================
-
-            elif response.status_code == 404:
-
-                success = save_saved_sessions(
-                    DEFAULT_SESSIONS,
-                    commit_message=(
-                        "Create session feedback options"
-                    )
-                )
-
-
-                return (
-                    normalize_saved_sessions(
-                        DEFAULT_SESSIONS
-                    )
-                )
-
-
-            # =================================================
-            # OTHER GITHUB ERROR
-            # =================================================
-
-            else:
-
-                st.warning(
-                    "Could not load saved presenters "
-                    "from GitHub. "
-                    f"HTTP {response.status_code}"
-                )
-
-
-                return (
-                    normalize_saved_sessions(
-                        DEFAULT_SESSIONS
-                    )
-                )
-
-
-        except Exception as e:
-
-            st.warning(
-                "Could not load saved presenters. "
-                f"Using defaults instead. {e}"
-            )
-
-
-            return (
-                normalize_saved_sessions(
-                    DEFAULT_SESSIONS
-                )
-            )
-
-
-    # =========================================================
-    # SAVE SAVED PRESENTERS / SESSIONS
+    # SAVE ENCRYPTED DATA TO GITHUB
     # =========================================================
 
     def save_saved_sessions(
         data,
         commit_message=(
-            "Update session feedback options"
+            "Update encrypted session feedback options"
         )
     ):
 
@@ -2309,7 +2329,7 @@ elif instrument == "Session Feedback Link Creator":
 
             st.error(
                 "GitHub persistence is not configured. "
-                "Add the GitHub settings to "
+                "Add the [github] section to "
                 "Streamlit Secrets."
             )
 
@@ -2317,7 +2337,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
         # -----------------------------------------------------
-        # Always save using NEW format
+        # Normalize
         # -----------------------------------------------------
 
         data = normalize_saved_sessions(
@@ -2325,9 +2345,40 @@ elif instrument == "Session Feedback Link Creator":
         )
 
 
+        # -----------------------------------------------------
+        # Encrypt
+        # -----------------------------------------------------
+
+        encrypted_text = (
+            encrypt_saved_data(
+                data
+            )
+        )
+
+
+        # -----------------------------------------------------
+        # GitHub Contents API itself requires file content
+        # to be base64 encoded.
+        #
+        # This is separate from the encryption.
+        # -----------------------------------------------------
+
+        encoded_content = (
+            base64.b64encode(
+                encrypted_text.encode(
+                    "utf-8"
+                )
+            )
+            .decode(
+                "utf-8"
+            )
+        )
+
+
         url = github_file_url(
             GITHUB_DATA_FILE
         )
+
 
         sha = None
 
@@ -2335,16 +2386,19 @@ elif instrument == "Session Feedback Link Creator":
         try:
 
             # =================================================
-            # CHECK IF FILE ALREADY EXISTS
+            # CHECK IF ENCRYPTED FILE ALREADY EXISTS
             # =================================================
 
-            current_response = requests.get(
-                url,
-                headers=github_headers(),
-                params={
-                    "ref": GITHUB_BRANCH
-                },
-                timeout=15,
+            current_response = (
+                requests.get(
+                    url,
+                    headers=github_headers(),
+                    params={
+                        "ref":
+                            GITHUB_BRANCH
+                    },
+                    timeout=15,
+                )
             )
 
 
@@ -2368,36 +2422,13 @@ elif instrument == "Session Feedback Link Creator":
             ):
 
                 st.error(
-                    "Could not check the existing "
-                    "GitHub file. "
+                    "Could not check the encrypted "
+                    "GitHub data file. "
                     f"HTTP "
                     f"{current_response.status_code}"
                 )
 
                 return False
-
-
-            # =================================================
-            # CONVERT TO JSON
-            # =================================================
-
-            json_text = json.dumps(
-                data,
-                indent=2,
-                ensure_ascii=False
-            )
-
-
-            encoded_content = (
-                base64.b64encode(
-                    json_text.encode(
-                        "utf-8"
-                    )
-                )
-                .decode(
-                    "utf-8"
-                )
-            )
 
 
             # =================================================
@@ -2417,8 +2448,10 @@ elif instrument == "Session Feedback Link Creator":
             }
 
 
-            # Required when updating
-            # an existing GitHub file
+            # -------------------------------------------------
+            # SHA required when updating existing file
+            # -------------------------------------------------
+
             if sha:
 
                 payload[
@@ -2427,7 +2460,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # =================================================
-            # SAVE TO GITHUB
+            # SAVE
             # =================================================
 
             response = requests.put(
@@ -2447,7 +2480,8 @@ elif instrument == "Session Feedback Link Creator":
 
 
             st.error(
-                "GitHub could not save the changes. "
+                "GitHub could not save the encrypted "
+                "presenter information. "
                 f"HTTP {response.status_code}: "
                 f"{response.text}"
             )
@@ -2459,18 +2493,319 @@ elif instrument == "Session Feedback Link Creator":
         except Exception as e:
 
             st.error(
-                f"Unable to save to GitHub: {e}"
+                "Unable to save encrypted "
+                f"presenter information: {e}"
             )
 
             return False
 
 
     # =========================================================
-    # LOAD SAVED DATA
+    # LOAD OLD PLAINTEXT FILE
     # =========================================================
     #
-    # IMPORTANT:
-    # This must come AFTER all helper functions above.
+    # Only used if encrypted .enc file does not exist.
+    #
+    # =========================================================
+
+    def load_legacy_plaintext_file():
+
+        if not github_configured:
+
+            return None
+
+
+        legacy_url = github_file_url(
+            LEGACY_GITHUB_DATA_FILE
+        )
+
+
+        try:
+
+            response = requests.get(
+                legacy_url,
+                headers=github_headers(),
+                params={
+                    "ref":
+                        GITHUB_BRANCH
+                },
+                timeout=15,
+            )
+
+
+            if (
+                response.status_code
+                == 404
+            ):
+
+                return None
+
+
+            if (
+                response.status_code
+                != 200
+            ):
+
+                return None
+
+
+            file_info = (
+                response.json()
+            )
+
+
+            encoded_content = (
+                file_info.get(
+                    "content",
+                    ""
+                )
+            )
+
+
+            decoded_content = (
+                base64.b64decode(
+                    encoded_content
+                )
+                .decode(
+                    "utf-8"
+                )
+                .strip()
+            )
+
+
+            if not decoded_content:
+
+                return None
+
+
+            try:
+
+                data = json.loads(
+                    decoded_content
+                )
+
+            except json.JSONDecodeError:
+
+                return None
+
+
+            return normalize_saved_sessions(
+                data
+            )
+
+
+        except Exception:
+
+            return None
+
+
+    # =========================================================
+    # LOAD ENCRYPTED DATA FROM GITHUB
+    # =========================================================
+
+    def load_saved_sessions():
+
+        # -----------------------------------------------------
+        # If GitHub is unavailable, use defaults for this run.
+        # They will not persist.
+        # -----------------------------------------------------
+
+        if not github_configured:
+
+            return normalize_saved_sessions(
+                DEFAULT_SESSIONS
+            )
+
+
+        url = github_file_url(
+            GITHUB_DATA_FILE
+        )
+
+
+        try:
+
+            response = requests.get(
+                url,
+                headers=github_headers(),
+                params={
+                    "ref":
+                        GITHUB_BRANCH
+                },
+                timeout=15,
+            )
+
+
+            # =================================================
+            # ENCRYPTED FILE EXISTS
+            # =================================================
+
+            if (
+                response.status_code
+                == 200
+            ):
+
+                file_info = (
+                    response.json()
+                )
+
+
+                encoded_content = (
+                    file_info.get(
+                        "content",
+                        ""
+                    )
+                )
+
+
+                encrypted_text = (
+                    base64.b64decode(
+                        encoded_content
+                    )
+                    .decode(
+                        "utf-8"
+                    )
+                    .strip()
+                )
+
+
+                if not encrypted_text:
+
+                    st.error(
+                        "The encrypted presenter file "
+                        "exists but is empty."
+                    )
+
+                    st.stop()
+
+
+                try:
+
+                    return decrypt_saved_data(
+                        encrypted_text
+                    )
+
+
+                except InvalidToken:
+
+                    st.error(
+                        "The encrypted presenter file "
+                        "could not be decrypted. "
+                        "The Streamlit encryption key "
+                        "does not match the key that was "
+                        "used to create this file."
+                    )
+
+                    st.stop()
+
+
+                except Exception as e:
+
+                    st.error(
+                        "The encrypted presenter file "
+                        "could not be read. "
+                        f"{e}"
+                    )
+
+                    st.stop()
+
+
+            # =================================================
+            # ENCRYPTED FILE DOES NOT EXIST
+            # =================================================
+
+            elif (
+                response.status_code
+                == 404
+            ):
+
+                # ---------------------------------------------
+                # Check for OLD plaintext JSON
+                # ---------------------------------------------
+
+                legacy_data = (
+                    load_legacy_plaintext_file()
+                )
+
+
+                if legacy_data:
+
+                    success = (
+                        save_saved_sessions(
+                            legacy_data,
+                            commit_message=(
+                                "Migrate session feedback "
+                                "options to encrypted storage"
+                            )
+                        )
+                    )
+
+
+                    if success:
+
+                        st.warning(
+                            "Your old presenter data was "
+                            "successfully migrated to the "
+                            "encrypted GitHub file. "
+                            "The old plaintext JSON file "
+                            "still exists in GitHub and "
+                            "should be removed."
+                        )
+
+
+                    return legacy_data
+
+
+                # ---------------------------------------------
+                # No old file either.
+                # Create encrypted defaults.
+                # ---------------------------------------------
+
+                default_data = (
+                    normalize_saved_sessions(
+                        DEFAULT_SESSIONS
+                    )
+                )
+
+
+                save_saved_sessions(
+                    default_data,
+                    commit_message=(
+                        "Create encrypted session "
+                        "feedback options"
+                    )
+                )
+
+
+                return default_data
+
+
+            # =================================================
+            # UNEXPECTED GITHUB ERROR
+            # =================================================
+
+            else:
+
+                st.error(
+                    "Could not load the encrypted "
+                    "presenter information from GitHub. "
+                    f"HTTP {response.status_code}"
+                )
+
+                st.stop()
+
+
+        except Exception as e:
+
+            st.error(
+                "Could not load encrypted presenter "
+                f"information: {e}"
+            )
+
+            st.stop()
+
+
+    # =========================================================
+    # LOAD SAVED DATA
     # =========================================================
 
     saved_sessions = (
@@ -2488,7 +2823,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # PRESENTER
+    # PRESENTER DROPDOWN
     # =========================================================
 
     presenter_options = (
@@ -2589,12 +2924,14 @@ elif instrument == "Session Feedback Link Creator":
 
 
         # -----------------------------------------------------
-        # USERNAME ALREADY SAVED
+        # Username already stored
         # -----------------------------------------------------
 
         if stored_username:
 
-            username = stored_username
+            username = (
+                stored_username
+            )
 
 
             st.text_input(
@@ -2602,17 +2939,16 @@ elif instrument == "Session Feedback Link Creator":
                 value=username,
                 disabled=True,
                 key=(
-                    "feedback_existing_username_"
-                    + presenter
+                    "existing_username_"
+                    + widget_suffix(
+                        presenter
+                    )
                 )
             )
 
 
         # -----------------------------------------------------
-        # OLD PRESENTER WITHOUT USERNAME
-        #
-        # Enter username once.
-        # Save below.
+        # Old presenter without saved username
         # -----------------------------------------------------
 
         else:
@@ -2627,8 +2963,10 @@ elif instrument == "Session Feedback Link Creator":
                     "Enter presenter username"
                 ),
                 key=(
-                    "feedback_missing_username_"
-                    + presenter
+                    "missing_username_"
+                    + widget_suffix(
+                        presenter
+                    )
                 )
             )
 
@@ -2643,7 +2981,10 @@ elif instrument == "Session Feedback Link Creator":
         # EXISTING PRESENTER
         # -----------------------------------------------------
 
-        if presenter in saved_sessions:
+        if (
+            presenter
+            in saved_sessions
+        ):
 
             presenter_sessions = (
                 saved_sessions[
@@ -2675,14 +3016,16 @@ elif instrument == "Session Feedback Link Creator":
                     "Select session title..."
                 ),
                 key=(
-                    "feedback_session_title_"
-                    + presenter
+                    "feedback_title_"
+                    + widget_suffix(
+                        presenter
+                    )
                 )
             )
 
 
             # -------------------------------------------------
-            # MANUAL NEW TITLE
+            # Add new title
             # -------------------------------------------------
 
             if (
@@ -2701,8 +3044,10 @@ elif instrument == "Session Feedback Link Creator":
                             "Enter session title"
                         ),
                         key=(
-                            "manual_feedback_title_"
-                            + presenter
+                            "manual_title_"
+                            + widget_suffix(
+                                presenter
+                            )
                         )
                     )
                 )
@@ -2773,8 +3118,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # ---------------------------------------------------------
-    # REDCap prefill format:
-    # YYYY-MM-DD
+    # REDCap requires YYYY-MM-DD for URL prefill
     # ---------------------------------------------------------
 
     date_for_redcap = (
@@ -2790,7 +3134,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # ---------------------------------------------------------
-    # Friendly date for PDF
+    # Friendly date shown on PDF
     # ---------------------------------------------------------
 
     session_date_display = (
@@ -2843,7 +3187,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # -------------------------------------------------
-            # Reload latest GitHub version
+            # Get latest encrypted copy from GitHub
             # -------------------------------------------------
 
             latest_sessions = (
@@ -2852,7 +3196,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # -------------------------------------------------
-            # Create presenter if needed
+            # Create presenter if necessary
             # -------------------------------------------------
 
             if (
@@ -2871,10 +3215,6 @@ elif instrument == "Session Feedback Link Creator":
                         []
                 }
 
-
-            # -------------------------------------------------
-            # Ensure presenter entry is valid
-            # -------------------------------------------------
 
             presenter_entry = (
                 latest_sessions[
@@ -2899,7 +3239,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # -------------------------------------------------
-            # SAVE / UPDATE USERNAME
+            # Save username
             # -------------------------------------------------
 
             presenter_entry[
@@ -2908,7 +3248,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # -------------------------------------------------
-            # SAVE SESSION TITLE
+            # Save session title
             # -------------------------------------------------
 
             existing_titles = (
@@ -2952,15 +3292,16 @@ elif instrument == "Session Feedback Link Creator":
 
 
             # -------------------------------------------------
-            # SAVE TO GITHUB
+            # Encrypt and save to GitHub
             # -------------------------------------------------
 
-            success = save_saved_sessions(
-                latest_sessions,
-                commit_message=(
-                    "Update session feedback option: "
-                    f"{presenter_clean} - "
-                    f"{title_clean}"
+            success = (
+                save_saved_sessions(
+                    latest_sessions,
+                    commit_message=(
+                        "Update encrypted session "
+                        "feedback option"
+                    )
                 )
             )
 
@@ -3073,7 +3414,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
         # =====================================================
-        # DISPLAY LINK + QR CODE
+        # DISPLAY LINK + QR
         # =====================================================
 
         st.divider()
@@ -3107,7 +3448,9 @@ elif instrument == "Session Feedback Link Creator":
             qr_bytes
         ):
 
-            pdf_buffer = io.BytesIO()
+            pdf_buffer = (
+                io.BytesIO()
+            )
 
 
             c = canvas.Canvas(
@@ -3341,7 +3684,7 @@ elif instrument == "Session Feedback Link Creator":
 
 
     # =========================================================
-    # MISSING INFORMATION MESSAGE
+    # INCOMPLETE INFORMATION
     # =========================================================
 
     else:
@@ -3392,10 +3735,9 @@ elif instrument == "Session Feedback Link Creator":
         if not github_configured:
 
             st.warning(
-                "GitHub persistence is not "
-                "configured yet. "
-                "Add the [github] section "
-                "to Streamlit Secrets."
+                "GitHub persistence is not configured. "
+                "Add the [github] section to "
+                "Streamlit Secrets."
             )
 
 
@@ -3411,13 +3753,13 @@ elif instrument == "Session Feedback Link Creator":
 
             st.write(
                 "Update a username, remove "
-                "an individual session title, "
+                "a saved session title, "
                 "or remove a presenter."
             )
 
 
             # =================================================
-            # SELECT PRESENTER TO MANAGE
+            # SELECT PRESENTER
             # =================================================
 
             manage_presenter = st.selectbox(
@@ -3448,6 +3790,13 @@ elif instrument == "Session Feedback Link Creator":
                 )
 
 
+                manage_suffix = (
+                    widget_suffix(
+                        manage_presenter
+                    )
+                )
+
+
                 # =================================================
                 # UPDATE USERNAME
                 # =================================================
@@ -3470,8 +3819,8 @@ elif instrument == "Session Feedback Link Creator":
                         "Username",
                         value=current_username,
                         key=(
-                            "manage_feedback_username_"
-                            + manage_presenter
+                            "manage_username_"
+                            + manage_suffix
                         )
                     )
                 )
@@ -3486,12 +3835,14 @@ elif instrument == "Session Feedback Link Creator":
                         "💾 Update Username",
                         use_container_width=True,
                         key=(
-                            "update_feedback_username_"
-                            + manage_presenter
+                            "update_username_"
+                            + manage_suffix
                         )
                     ):
 
-                        if not updated_username.strip():
+                        if not (
+                            updated_username.strip()
+                        ):
 
                             st.warning(
                                 "Username cannot be blank."
@@ -3524,9 +3875,8 @@ elif instrument == "Session Feedback Link Creator":
                                     save_saved_sessions(
                                         latest_sessions,
                                         commit_message=(
-                                            "Update session "
-                                            "feedback username: "
-                                            f"{manage_presenter}"
+                                            "Update encrypted "
+                                            "presenter username"
                                         )
                                     )
                                 )
@@ -3562,17 +3912,20 @@ elif instrument == "Session Feedback Link Creator":
 
                 if presenter_titles:
 
-                    remove_title = st.selectbox(
-                        "Session title to remove",
-                        options=(
-                            presenter_titles
-                        ),
-                        index=None,
-                        placeholder=(
-                            "Select session title..."
-                        ),
-                        key=(
-                            "remove_feedback_title"
+                    remove_title = (
+                        st.selectbox(
+                            "Session title to remove",
+                            options=(
+                                presenter_titles
+                            ),
+                            index=None,
+                            placeholder=(
+                                "Select session title..."
+                            ),
+                            key=(
+                                "remove_title_"
+                                + manage_suffix
+                            )
                         )
                     )
 
@@ -3583,7 +3936,8 @@ elif instrument == "Session Feedback Link Creator":
                             "🗑️ Remove This Session",
                             use_container_width=True,
                             key=(
-                                "remove_feedback_session"
+                                "remove_session_"
+                                + manage_suffix
                             )
                         ):
 
@@ -3625,26 +3979,24 @@ elif instrument == "Session Feedback Link Creator":
                                 ]
 
 
-                            success = (
-                                save_saved_sessions(
-                                    latest_sessions,
-                                    commit_message=(
-                                        "Remove session "
-                                        "feedback option: "
-                                        f"{manage_presenter} - "
-                                        f"{remove_title}"
+                                success = (
+                                    save_saved_sessions(
+                                        latest_sessions,
+                                        commit_message=(
+                                            "Remove encrypted "
+                                            "session feedback option"
+                                        )
                                     )
                                 )
-                            )
 
 
-                            if success:
+                                if success:
 
-                                st.success(
-                                    "Session removed."
-                                )
+                                    st.success(
+                                        "Session removed."
+                                    )
 
-                                st.rerun()
+                                    st.rerun()
 
 
                 else:
@@ -3666,7 +4018,7 @@ elif instrument == "Session Feedback Link Creator":
                 )
 
 
-                remove_entire_presenter = (
+                confirm_remove = (
                     st.checkbox(
                         (
                             f"Remove {manage_presenter} "
@@ -3674,21 +4026,21 @@ elif instrument == "Session Feedback Link Creator":
                         ),
                         key=(
                             "confirm_remove_"
-                            "feedback_presenter"
+                            + manage_suffix
                         )
                     )
                 )
 
 
-                if remove_entire_presenter:
+                if confirm_remove:
 
                     if st.button(
                         "🗑️ Remove Presenter",
                         type="primary",
                         use_container_width=True,
                         key=(
-                            "remove_entire_"
-                            "feedback_presenter"
+                            "remove_presenter_"
+                            + manage_suffix
                         )
                     ):
 
@@ -3707,25 +4059,25 @@ elif instrument == "Session Feedback Link Creator":
                             ]
 
 
-                        success = (
-                            save_saved_sessions(
-                                latest_sessions,
-                                commit_message=(
-                                    "Remove session "
-                                    "feedback presenter: "
-                                    f"{manage_presenter}"
+                            success = (
+                                save_saved_sessions(
+                                    latest_sessions,
+                                    commit_message=(
+                                        "Remove encrypted "
+                                        "session feedback presenter"
+                                    )
                                 )
                             )
-                        )
 
 
-                        if success:
+                            if success:
 
-                            st.success(
-                                f"{manage_presenter} removed."
-                            )
+                                st.success(
+                                    f"{manage_presenter} removed."
+                                )
 
-                            st.rerun()
+                                st.rerun()
+                                
 
 elif instrument == "Session Feedback Summary Creator":
     st.header("📋 Session Feedback Summary Creator")
