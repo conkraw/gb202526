@@ -4092,39 +4092,40 @@ elif instrument == "Session Feedback Summary Creator":
     from docx import Document
     from docx.shared import Inches, Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import (
-        WD_TABLE_ALIGNMENT,
-        WD_CELL_VERTICAL_ALIGNMENT
-    )
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
 
 
     # =========================================================
-    # DEFAULT QUESTION / COMMENT LABELS
+    # CURRENT REDCap QUESTION SET
     # =========================================================
-    #
-    # Update these here if your REDCap questions change.
-    #
-    # These mappings are hidden during normal use.
-    # They can be viewed/edited under Troubleshooting.
-    # =========================================================
+    # Only these fields will be used, even if an older CSV still
+    # contains q005, q006, q007, q008, etc.
 
     DEFAULT_QUESTION_LABELS = {
-        "q001": "The presenter was well-prepared for this session.",
-        "q002": "The presenter created an environment that encouraged me to participate and ask questions.",
+        "q001": "The presenter communicated the material clearly and effectively.",
+        "q002": "The cases, examples, or clinical reasoning used in this session enhanced my understanding of the material.",
         "q003": "I gained knowledge or skills from this session that I expect to use in future clinical encounters.",
-        "q004": "The cases or examples used by the presenter enhanced my understanding of the material.",
-        "q005": "This presenter modeled effective clinical reasoning to help me develop my own clinical reasoning.",
-        "q006": "This presenter contributed meaningfully to my learning during the pediatric clerkship.",
-        "q007": "This presenter was an effective educator during my time in the pediatric clerkship.",
-        "q008": "Overall, I found this teaching session valuable to my learning.",
+        "q004": "Overall, I found this teaching session valuable to my learning.",
     }
 
     DEFAULT_COMMENT_LABELS = {
         "session_c001": "What is one aspect of the session that contributed most to your learning?",
         "session_c002": "What suggestions would you offer to further enhance the teaching session?",
     }
+
+    ACTIVE_QUESTION_FIELDS = [
+        "q001",
+        "q002",
+        "q003",
+        "q004",
+    ]
+
+    ACTIVE_COMMENT_FIELDS = [
+        "session_c001",
+        "session_c002",
+    ]
 
 
     # =========================================================
@@ -4134,10 +4135,6 @@ elif instrument == "Session Feedback Summary Creator":
     def get_academic_year(value):
         """
         Academic year begins July 1.
-
-        Examples:
-        09/10/2026 -> 2026-2027
-        03/10/2027 -> 2026-2027
         """
 
         d = pd.to_datetime(
@@ -4156,7 +4153,7 @@ elif instrument == "Session Feedback Summary Creator":
 
     def clean_redcap_comment(value):
         """
-        Remove REDCap HTML formatting from comments.
+        Remove REDCap HTML formatting from narrative comments.
         """
 
         if pd.isna(value):
@@ -4222,25 +4219,6 @@ elif instrument == "Session Feedback Summary Creator":
         return value or "Presenter"
 
 
-    def numeric_field_sort(field_name):
-        """
-        Makes sure q001, q002 ... q010 stay
-        in numerical order.
-        """
-
-        match = re.search(
-            r"(\d+)$",
-            str(field_name)
-        )
-
-        if match:
-            return int(
-                match.group(1)
-            )
-
-        return 9999
-
-
     # =========================================================
     # WORD FORMATTING HELPERS
     # =========================================================
@@ -4284,17 +4262,11 @@ elif instrument == "Session Feedback Summary Creator":
 
         paragraph = cell.paragraphs[0]
 
-        if alignment == "left":
-
-            paragraph.alignment = (
-                WD_ALIGN_PARAGRAPH.LEFT
-            )
-
-        else:
-
-            paragraph.alignment = (
-                WD_ALIGN_PARAGRAPH.CENTER
-            )
+        paragraph.alignment = (
+            WD_ALIGN_PARAGRAPH.LEFT
+            if alignment == "left"
+            else WD_ALIGN_PARAGRAPH.CENTER
+        )
 
         paragraph.paragraph_format.space_after = Pt(
             0
@@ -4363,7 +4335,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
         # -----------------------------------------------------
-        # Convert rating questions to numbers
+        # Convert rating questions to numeric
         # -----------------------------------------------------
 
         for col in question_columns:
@@ -4393,7 +4365,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
         # -----------------------------------------------------
-        # If date is missing, use REDCap timestamp
+        # If session date missing, use REDCap timestamp
         # -----------------------------------------------------
 
         if (
@@ -4460,8 +4432,6 @@ elif instrument == "Session Feedback Summary Creator":
         #
         # Same presenter + same title + same date
         # = one individual teaching session.
-        #
-        # Same title on DIFFERENT dates stays separate.
         # -----------------------------------------------------
 
         presenter_df[
@@ -4525,10 +4495,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
             # -------------------------------------------------
-            # SESSION RATING AVERAGE
-            #
-            # Average of all included 1-5 responses
-            # from this individual session.
+            # Session rating average
             # -------------------------------------------------
 
             if question_columns:
@@ -4548,17 +4515,13 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-            if len(
-                scores
-            ) > 0:
-
-                rating_average = float(
+            rating_average = (
+                float(
                     scores.mean()
                 )
-
-            else:
-
-                rating_average = None
+                if len(scores) > 0
+                else None
+            )
 
 
             # -------------------------------------------------
@@ -4571,9 +4534,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
             # -------------------------------------------------
-            # Number of participants
-            #
-            # Uses the first valid par_number for that session.
+            # Participants
             # -------------------------------------------------
 
             participant_number = None
@@ -4608,8 +4569,6 @@ elif instrument == "Session Feedback Summary Creator":
 
             # -------------------------------------------------
             # Username
-            #
-            # Pulled directly from original REDCap export.
             # -------------------------------------------------
 
             username = ""
@@ -4657,19 +4616,15 @@ elif instrument == "Session Feedback Summary Creator":
             )
 
 
-            if pd.isna(
-                parsed_date
-            ):
-
-                display_date = ""
-
-            else:
-
-                display_date = (
-                    parsed_date.strftime(
-                        "%m/%d/%Y"
-                    )
+            display_date = (
+                ""
+                if pd.isna(
+                    parsed_date
                 )
+                else parsed_date.strftime(
+                    "%m/%d/%Y"
+                )
+            )
 
 
             summary_rows.append(
@@ -4697,13 +4652,8 @@ elif instrument == "Session Feedback Summary Creator":
 
                     "_session_key":
                         (
-                            str(
-                                session_title
-                            )
-                            + "||"
-                            + str(
-                                session_day
-                            )
+                            f"{session_title}"
+                            f"||{session_day}"
                         ),
                 }
             )
@@ -4730,20 +4680,123 @@ elif instrument == "Session Feedback Summary Creator":
             )
 
 
-            summary_df = summary_df.sort_values(
-                "_sort_date",
-                ascending=False
+            summary_df = (
+                summary_df.sort_values(
+                    "_sort_date",
+                    ascending=False
+                )
             )
 
 
-            summary_df = summary_df.drop(
-                columns=[
-                    "_sort_date"
-                ]
+            summary_df = (
+                summary_df.drop(
+                    columns=[
+                        "_sort_date"
+                    ]
+                )
             )
 
 
         return summary_df
+
+
+    # =========================================================
+    # COLLECT COMMENTS
+    # =========================================================
+
+    def collect_presenter_comments(
+        presenter_df,
+        comment_columns
+    ):
+
+        cleaned_comments = {}
+
+        evaluations_with_comments = pd.Series(
+            False,
+            index=presenter_df.index
+        )
+
+        total_comments = 0
+
+
+        for comment_col in (
+            comment_columns
+        ):
+
+            entries = []
+
+
+            for idx, row in (
+                presenter_df.iterrows()
+            ):
+
+                comment = clean_redcap_comment(
+                    row.get(
+                        comment_col,
+                        ""
+                    )
+                )
+
+
+                if not comment:
+                    continue
+
+
+                total_comments += 1
+
+                evaluations_with_comments.loc[
+                    idx
+                ] = True
+
+
+                session_date = pd.to_datetime(
+                    row.get(
+                        "_session_date"
+                    ),
+                    errors="coerce"
+                )
+
+
+                date_text = (
+                    ""
+                    if pd.isna(
+                        session_date
+                    )
+                    else session_date.strftime(
+                        "%m/%d/%Y"
+                    )
+                )
+
+
+                entries.append(
+                    {
+                        "date":
+                            date_text,
+
+                        "title":
+                            row.get(
+                                "_title",
+                                ""
+                            ),
+
+                        "comment":
+                            comment,
+                    }
+                )
+
+
+            cleaned_comments[
+                comment_col
+            ] = entries
+
+
+        return (
+            cleaned_comments,
+            int(
+                evaluations_with_comments.sum()
+            ),
+            total_comments,
+        )
 
 
     # =========================================================
@@ -4816,100 +4869,13 @@ elif instrument == "Session Feedback Summary Creator":
         )
 
 
-        # =====================================================
-        # COLLECT COMMENTS
-        # =====================================================
-
-        cleaned_comments = {}
-
-
-        evaluations_with_comments = pd.Series(
-            False,
-            index=presenter_df.index
-        )
-
-
-        total_comments = 0
-
-
-        for comment_col in (
+        (
+            cleaned_comments,
+            number_evaluations_with_comments,
+            total_comments,
+        ) = collect_presenter_comments(
+            presenter_df,
             comment_columns
-        ):
-
-            entries = []
-
-
-            for idx, row in (
-                presenter_df.iterrows()
-            ):
-
-                comment = clean_redcap_comment(
-                    row.get(
-                        comment_col,
-                        ""
-                    )
-                )
-
-
-                if not comment:
-                    continue
-
-
-                total_comments += 1
-
-
-                evaluations_with_comments.loc[
-                    idx
-                ] = True
-
-
-                session_date = pd.to_datetime(
-                    row.get(
-                        "_session_date"
-                    ),
-                    errors="coerce"
-                )
-
-
-                if pd.isna(
-                    session_date
-                ):
-
-                    date_text = ""
-
-                else:
-
-                    date_text = (
-                        session_date.strftime(
-                            "%m/%d/%Y"
-                        )
-                    )
-
-
-                entries.append(
-                    {
-                        "date":
-                            date_text,
-
-                        "title":
-                            row.get(
-                                "_title",
-                                ""
-                            ),
-
-                        "comment":
-                            comment,
-                    }
-                )
-
-
-            cleaned_comments[
-                comment_col
-            ] = entries
-
-
-        number_evaluations_with_comments = int(
-            evaluations_with_comments.sum()
         )
 
 
@@ -4941,10 +4907,6 @@ elif instrument == "Session Feedback Summary Creator":
         )
 
 
-        # -----------------------------------------------------
-        # Default font
-        # -----------------------------------------------------
-
         normal_style = document.styles[
             "Normal"
         ]
@@ -4969,7 +4931,6 @@ elif instrument == "Session Feedback Summary Creator":
         paragraph.paragraph_format.space_after = Pt(
             2
         )
-
 
         run = paragraph.add_run(
             presenter_name
@@ -4996,7 +4957,6 @@ elif instrument == "Session Feedback Summary Creator":
             7
         )
 
-
         run = paragraph.add_run(
             "Teaching Evaluation Summary"
         )
@@ -5021,7 +4981,6 @@ elif instrument == "Session Feedback Summary Creator":
         paragraph.paragraph_format.space_after = Pt(
             8
         )
-
 
         run = paragraph.add_run(
             f"Completed Evaluations: "
@@ -5052,7 +5011,6 @@ elif instrument == "Session Feedback Summary Creator":
             rows=1,
             cols=6
         )
-
 
         activity_table.style = (
             "Table Grid"
@@ -5111,50 +5069,36 @@ elif instrument == "Session Feedback Summary Creator":
             )
 
 
-            # ---------------------------------------------
-            # Rating
-            # ---------------------------------------------
-
             rating = row[
                 "Rating Average"
             ]
 
 
-            if pd.isna(
-                rating
-            ):
-
-                rating_text = "N/A"
-
-            else:
-
-                rating_text = (
-                    f"{rating:.2f}"
+            rating_text = (
+                "N/A"
+                if pd.isna(
+                    rating
                 )
+                else f"{rating:.2f}"
+            )
 
-
-            # ---------------------------------------------
-            # Participants
-            # ---------------------------------------------
 
             participants = row[
                 "Participants"
             ]
 
 
-            if pd.isna(
-                participants
-            ):
-
-                participant_text = ""
-
-            else:
-
-                participant_text = str(
+            participant_text = (
+                ""
+                if pd.isna(
+                    participants
+                )
+                else str(
                     int(
                         participants
                     )
                 )
+            )
 
 
             values = [
@@ -5201,7 +5145,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
         # =====================================================
-        # QUESTION AVERAGES
+        # QUESTION AVERAGES — ONLY q001-q004
         # =====================================================
 
         add_section_heading(
@@ -5216,7 +5160,6 @@ elif instrument == "Session Feedback Summary Creator":
                 rows=1,
                 cols=3
             )
-
 
             question_table.style = (
                 "Table Grid"
@@ -5278,17 +5221,13 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-                if len(
-                    values
-                ) > 0:
-
-                    average_text = (
-                        f"{values.mean():.2f}"
-                    )
-
-                else:
-
-                    average_text = "N/A"
+                average_text = (
+                    f"{values.mean():.2f}"
+                    if len(
+                        values
+                    ) > 0
+                    else "N/A"
+                )
 
 
                 cells = (
@@ -5334,7 +5273,8 @@ elif instrument == "Session Feedback Summary Creator":
         else:
 
             paragraph = document.add_paragraph(
-                "No rating questions were detected."
+                "None of the active rating questions "
+                "(q001-q004) were detected."
             )
 
             paragraph.runs[
@@ -5380,7 +5320,6 @@ elif instrument == "Session Feedback Summary Creator":
             5
         )
 
-
         run = paragraph.add_run(
             narrative_summary
         )
@@ -5404,7 +5343,6 @@ elif instrument == "Session Feedback Summary Creator":
                     cols=2
                 )
             )
-
 
             comment_summary_table.style = (
                 "Table Grid"
@@ -5524,10 +5462,6 @@ elif instrument == "Session Feedback Summary Creator":
             comments_written = True
 
 
-            # ---------------------------------------------
-            # Comment prompt
-            # ---------------------------------------------
-
             paragraph = document.add_paragraph()
 
             paragraph.paragraph_format.space_before = Pt(
@@ -5553,10 +5487,6 @@ elif instrument == "Session Feedback Summary Creator":
                 9
             )
 
-
-            # ---------------------------------------------
-            # Comments
-            # ---------------------------------------------
 
             for entry in entries:
 
@@ -5585,18 +5515,14 @@ elif instrument == "Session Feedback Summary Creator":
                     )
 
 
-                if context:
-
-                    prefix = (
-                        " — ".join(
-                            context
-                        )
-                        + ": "
+                prefix = (
+                    " — ".join(
+                        context
                     )
-
-                else:
-
-                    prefix = ""
+                    + ": "
+                    if context
+                    else ""
+                )
 
 
                 paragraph = document.add_paragraph(
@@ -5635,16 +5561,11 @@ elif instrument == "Session Feedback Summary Creator":
             )
 
 
-        # -----------------------------------------------------
-        # Footer note
-        # -----------------------------------------------------
-
         paragraph = document.add_paragraph()
 
         paragraph.paragraph_format.space_before = Pt(
             6
         )
-
 
         run = paragraph.add_run(
             "Learner comments are presented verbatim "
@@ -5660,7 +5581,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
         # =====================================================
-        # SAVE WORD FILE TO MEMORY
+        # SAVE WORD FILE
         # =====================================================
 
         output = io.BytesIO()
@@ -5683,10 +5604,6 @@ elif instrument == "Session Feedback Summary Creator":
     # One row = one individual teaching session.
     #
     # username is intentionally the FIRST column.
-    #
-    # Presenter-wide averages are repeated across that
-    # presenter's session rows so the CSV remains a simple,
-    # flat, sortable file.
     # =========================================================
 
     def create_master_summary_csv(
@@ -5740,20 +5657,18 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-            if len(
-                all_scores
-            ) > 0:
-
-                overall_rating = round(
+            overall_rating = (
+                round(
                     float(
                         all_scores.mean()
                     ),
                     2
                 )
-
-            else:
-
-                overall_rating = ""
+                if len(
+                    all_scores
+                ) > 0
+                else ""
+            )
 
 
             total_evaluations = len(
@@ -5783,25 +5698,10 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-                if len(
-                    values
-                ) > 0:
-
-                    average = round(
-                        float(
-                            values.mean()
-                        ),
-                        2
-                    )
-
-                else:
-
-                    average = ""
-
-
                 question_results[
                     question_col
                 ] = {
+
                     "question":
                         question_labels.get(
                             question_col,
@@ -5809,7 +5709,18 @@ elif instrument == "Session Feedback Summary Creator":
                         ),
 
                     "average":
-                        average,
+                        (
+                            round(
+                                float(
+                                    values.mean()
+                                ),
+                                2
+                            )
+                            if len(
+                                values
+                            ) > 0
+                            else ""
+                        ),
 
                     "n":
                         len(
@@ -5819,7 +5730,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
             # =================================================
-            # PRESENTER-WIDE COMMENT COUNTS
+            # PRESENTER-WIDE COMMENTS
             # =================================================
 
             evaluations_with_comments = pd.Series(
@@ -5827,9 +5738,7 @@ elif instrument == "Session Feedback Summary Creator":
                 index=presenter_df.index
             )
 
-
             total_comments = 0
-
 
             presenter_comment_counts = {}
 
@@ -5858,9 +5767,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
                     total_comments += 1
-
                     this_prompt_count += 1
-
 
                     evaluations_with_comments.loc[
                         idx
@@ -5919,9 +5826,9 @@ elif instrument == "Session Feedback Summary Creator":
                 output_row = {}
 
 
-                # =============================================
-                # USERNAME MUST BE FIRST COLUMN
-                # =============================================
+                # ---------------------------------------------
+                # USERNAME MUST BE FIRST
+                # ---------------------------------------------
 
                 output_row[
                     "username"
@@ -5930,9 +5837,9 @@ elif instrument == "Session Feedback Summary Creator":
                 ]
 
 
-                # =============================================
-                # SESSION INFORMATION
-                # =============================================
+                # ---------------------------------------------
+                # Session information
+                # ---------------------------------------------
 
                 output_row[
                     "presenter"
@@ -5960,64 +5867,44 @@ elif instrument == "Session Feedback Summary Creator":
                 ]
 
 
-                # ---------------------------------------------
-                # Participants
-                # ---------------------------------------------
-
                 participants = session_row[
                     "Participants"
                 ]
 
 
-                if pd.isna(
-                    participants
-                ):
-
-                    output_row[
-                        "participants"
-                    ] = ""
-
-                else:
-
-                    output_row[
-                        "participants"
-                    ] = int(
+                output_row[
+                    "participants"
+                ] = (
+                    ""
+                    if pd.isna(
                         participants
                     )
+                    else int(
+                        participants
+                    )
+                )
 
-
-                # ---------------------------------------------
-                # Session rating
-                # ---------------------------------------------
 
                 session_rating = session_row[
                     "Rating Average"
                 ]
 
 
-                if pd.isna(
-                    session_rating
-                ):
-
-                    output_row[
-                        "session_rating_average"
-                    ] = ""
-
-                else:
-
-                    output_row[
-                        "session_rating_average"
-                    ] = round(
+                output_row[
+                    "session_rating_average"
+                ] = (
+                    ""
+                    if pd.isna(
+                        session_rating
+                    )
+                    else round(
                         float(
                             session_rating
                         ),
                         2
                     )
+                )
 
-
-                # ---------------------------------------------
-                # Number of evaluations
-                # ---------------------------------------------
 
                 output_row[
                     "number_of_evaluations"
@@ -6027,10 +5914,6 @@ elif instrument == "Session Feedback Summary Creator":
                     ]
                 )
 
-
-                # =============================================
-                # PRESENTER-WIDE INFORMATION
-                # =============================================
 
                 output_row[
                     "overall_presenter_rating"
@@ -6050,9 +5933,9 @@ elif instrument == "Session Feedback Summary Creator":
                 )
 
 
-                # =============================================
-                # QUESTION AVERAGES
-                # =============================================
+                # ---------------------------------------------
+                # ONLY q001-q004
+                # ---------------------------------------------
 
                 for question_col in (
                     question_columns
@@ -6084,9 +5967,9 @@ elif instrument == "Session Feedback Summary Creator":
                     ]
 
 
-                # =============================================
-                # NARRATIVE SUMMARY
-                # =============================================
+                # ---------------------------------------------
+                # Narrative summary
+                # ---------------------------------------------
 
                 output_row[
                     "narrative_feedback_summary"
@@ -6105,9 +5988,9 @@ elif instrument == "Session Feedback Summary Creator":
                 ] = total_comments
 
 
-                # =============================================
-                # COMMENTS FOR THIS INDIVIDUAL SESSION
-                # =============================================
+                # ---------------------------------------------
+                # Comments from THIS individual session
+                # ---------------------------------------------
 
                 session_key = session_row[
                     "_session_key"
@@ -6125,10 +6008,6 @@ elif instrument == "Session Feedback Summary Creator":
                     comment_columns
                 ):
 
-                    # -----------------------------------------
-                    # Prompt wording
-                    # -----------------------------------------
-
                     output_row[
                         f"{comment_col}_prompt"
                     ] = comment_labels.get(
@@ -6137,22 +6016,15 @@ elif instrument == "Session Feedback Summary Creator":
                     )
 
 
-                    # -----------------------------------------
-                    # Total comments for this prompt
-                    # across presenter's entire report
-                    # -----------------------------------------
-
                     output_row[
                         f"{comment_col}_total_comments"
-                    ] = presenter_comment_counts.get(
-                        comment_col,
-                        0
+                    ] = (
+                        presenter_comment_counts.get(
+                            comment_col,
+                            0
+                        )
                     )
 
-
-                    # -----------------------------------------
-                    # Comments from THIS session
-                    # -----------------------------------------
 
                     session_comments = []
 
@@ -6187,10 +6059,6 @@ elif instrument == "Session Feedback Summary Creator":
                     output_row
                 )
 
-
-        # =====================================================
-        # CREATE CSV
-        # =====================================================
 
         master_df = pd.DataFrame(
             master_rows
@@ -6232,7 +6100,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
     # =========================================================
-    # UPLOAD REDCAP CSV
+    # UPLOAD REDCap CSV
     # =========================================================
 
     uploaded_file = st.file_uploader(
@@ -6257,7 +6125,7 @@ elif instrument == "Session Feedback Summary Creator":
 
 
         # -----------------------------------------------------
-        # Clear previous reports if a different CSV is uploaded
+        # Clear previous reports if different CSV uploaded
         # -----------------------------------------------------
 
         if (
@@ -6295,6 +6163,7 @@ elif instrument == "Session Feedback Summary Creator":
                     file_bytes
                 )
             )
+
 
         except Exception as e:
 
@@ -6431,82 +6300,103 @@ elif instrument == "Session Feedback Summary Creator":
 
 
                 # =============================================
-                # DETECT RATING QUESTIONS
+                # ONLY USE q001-q004
+                # =============================================
+                #
+                # q005-q008 are ignored even if present in
+                # an older REDCap export.
                 # =============================================
 
-                detected_questions = sorted(
-                    [
-                        col
-                        for col
-                        in evaluation_df.columns
-                        if re.fullmatch(
-                            r"q\d+",
-                            str(
-                                col
-                            )
-                        )
-                    ],
-                    key=numeric_field_sort
-                )
+                detected_questions = [
+                    field
+                    for field in ACTIVE_QUESTION_FIELDS
+                    if field in evaluation_df.columns
+                ]
 
 
                 # =============================================
-                # DETECT NARRATIVE COMMENT FIELDS
+                # ONLY USE session_c001 / session_c002
                 # =============================================
 
-                detected_comments = sorted(
-                    [
-                        col
-                        for col
-                        in evaluation_df.columns
-                        if re.fullmatch(
-                            r"session_c\d+",
-                            str(
-                                col
-                            )
-                        )
-                    ],
-                    key=numeric_field_sort
-                )
+                detected_comments = [
+                    field
+                    for field in ACTIVE_COMMENT_FIELDS
+                    if field in evaluation_df.columns
+                ]
 
 
                 # =============================================
                 # DEFAULT QUESTION / COMMENT MAPPINGS
                 # =============================================
-                #
-                # These remain invisible during normal use.
-                # =============================================
 
                 question_columns = (
-                    detected_questions
+                    detected_questions.copy()
                 )
 
 
                 question_labels = {
                     field:
-                        DEFAULT_QUESTION_LABELS.get(
-                            field,
+                        DEFAULT_QUESTION_LABELS[
                             field
-                        )
+                        ]
                     for field
                     in detected_questions
                 }
 
 
                 comment_columns = (
-                    detected_comments
+                    detected_comments.copy()
                 )
 
 
                 comment_labels = {
                     field:
-                        DEFAULT_COMMENT_LABELS.get(
-                            field,
+                        DEFAULT_COMMENT_LABELS[
                             field
-                        )
+                        ]
                     for field
                     in detected_comments
                 }
+
+
+                # =============================================
+                # WARN IF AN EXPECTED CURRENT FIELD IS MISSING
+                # =============================================
+
+                missing_active_questions = [
+                    field
+                    for field in ACTIVE_QUESTION_FIELDS
+                    if field not in evaluation_df.columns
+                ]
+
+
+                if missing_active_questions:
+
+                    st.warning(
+                        "The uploaded CSV is missing "
+                        "active rating field(s): "
+                        + ", ".join(
+                            missing_active_questions
+                        )
+                    )
+
+
+                missing_active_comments = [
+                    field
+                    for field in ACTIVE_COMMENT_FIELDS
+                    if field not in evaluation_df.columns
+                ]
+
+
+                if missing_active_comments:
+
+                    st.warning(
+                        "The uploaded CSV is missing "
+                        "active comment field(s): "
+                        + ", ".join(
+                            missing_active_comments
+                        )
+                    )
 
 
                 # =============================================
@@ -6556,8 +6446,7 @@ elif instrument == "Session Feedback Summary Creator":
                 # TROUBLESHOOTING
                 # =============================================
                 #
-                # Dataframes are hidden during normal use.
-                # Open this section only when needed.
+                # Mapping tables remain hidden unless needed.
                 # =============================================
 
                 with st.expander(
@@ -6579,13 +6468,13 @@ elif instrument == "Session Feedback Summary Creator":
 
                         st.caption(
                             "Use this only to verify or "
-                            "temporarily adjust how REDCap "
-                            "fields are mapped to the report."
+                            "temporarily adjust how the active "
+                            "REDCap fields are mapped to the report."
                         )
 
 
                         # =====================================
-                        # RATING QUESTIONS
+                        # RATING QUESTIONS — q001-q004 ONLY
                         # =====================================
 
                         st.markdown(
@@ -6597,11 +6486,12 @@ elif instrument == "Session Feedback Summary Creator":
 
                             question_config = pd.DataFrame(
                                 {
-                                    "Include": [
-                                        True
-                                        for _ in
-                                        detected_questions
-                                    ],
+                                    "Include":
+                                        [
+                                            True
+                                            for _ in
+                                            detected_questions
+                                        ],
 
                                     "REDCap Field":
                                         detected_questions,
@@ -6609,15 +6499,14 @@ elif instrument == "Session Feedback Summary Creator":
                                     (
                                         "Question / "
                                         "Evaluation Item"
-                                    ): [
-                                        DEFAULT_QUESTION_LABELS
-                                        .get(
-                                            field,
-                                            field
-                                        )
-                                        for field
-                                        in detected_questions
-                                    ],
+                                    ):
+                                        [
+                                            DEFAULT_QUESTION_LABELS[
+                                                field
+                                            ]
+                                            for field in
+                                            detected_questions
+                                        ],
                                 }
                             )
 
@@ -6674,8 +6563,8 @@ elif instrument == "Session Feedback Summary Creator":
                         else:
 
                             st.warning(
-                                "No q### rating fields "
-                                "were detected."
+                                "None of q001, q002, "
+                                "q003, or q004 were detected."
                             )
 
 
@@ -6692,24 +6581,24 @@ elif instrument == "Session Feedback Summary Creator":
 
                             comment_config = pd.DataFrame(
                                 {
-                                    "Include": [
-                                        True
-                                        for _ in
-                                        detected_comments
-                                    ],
+                                    "Include":
+                                        [
+                                            True
+                                            for _ in
+                                            detected_comments
+                                        ],
 
                                     "REDCap Field":
                                         detected_comments,
 
-                                    "Comment Prompt": [
-                                        DEFAULT_COMMENT_LABELS
-                                        .get(
-                                            field,
-                                            field
-                                        )
-                                        for field
-                                        in detected_comments
-                                    ],
+                                    "Comment Prompt":
+                                        [
+                                            DEFAULT_COMMENT_LABELS[
+                                                field
+                                            ]
+                                            for field in
+                                            detected_comments
+                                        ],
                                 }
                             )
 
@@ -6763,8 +6652,8 @@ elif instrument == "Session Feedback Summary Creator":
                         else:
 
                             st.info(
-                                "No narrative comment fields "
-                                "were detected."
+                                "Neither session_c001 nor "
+                                "session_c002 was detected."
                             )
 
 
@@ -7123,5 +7012,3 @@ elif instrument == "Session Feedback Summary Creator":
                             "feedback_summaries"
                         )
                     )
-
-
