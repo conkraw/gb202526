@@ -1888,6 +1888,7 @@ elif instrument == "Session Feedback Link Creator":
     st.header("📋 Session Feedback Link Creator")
 
     import io
+    import os
     import json
     import base64
     import urllib.parse
@@ -1910,7 +1911,8 @@ elif instrument == "Session Feedback Link Creator":
         "https://redcap.ctsi.psu.edu/surveys/"
         "?s=3HLWTMYWDF33479A"
     )
-
+    LOGO_PATH = "assets/penn_state_college_of_medicine_logo.png"
+    
     # ---------------------------------------------------------
     # NEW encrypted file
     # ---------------------------------------------------------
@@ -3447,187 +3449,187 @@ elif instrument == "Session Feedback Link Creator":
             feedback_url,
             qr_bytes
         ):
-
-            pdf_buffer = (
-                io.BytesIO()
-            )
-
-
+        
+            pdf_buffer = io.BytesIO()
+        
             c = canvas.Canvas(
                 pdf_buffer,
                 pagesize=letter
             )
-
-
-            page_width, page_height = (
-                letter
-            )
-
-
-            # ---------------------------------------------
+        
+            page_width, page_height = letter
+        
+        
+            # =====================================================
+            # PENN STATE COLLEGE OF MEDICINE LOGO
+            # =====================================================
+        
+            if os.path.exists(LOGO_PATH):
+        
+                try:
+        
+                    logo_reader = ImageReader(
+                        LOGO_PATH
+                    )
+        
+                    logo_width = 250
+                    logo_height = 60
+        
+                    c.drawImage(
+                        logo_reader,
+                        (page_width - logo_width) / 2,
+                        page_height - 95,
+                        width=logo_width,
+                        height=logo_height,
+                        preserveAspectRatio=True,
+                        mask="auto"
+                    )
+        
+                except Exception:
+                    pass
+        
+        
+            # =====================================================
             # TITLE
-            # ---------------------------------------------
-
+            # =====================================================
+        
             c.setFont(
                 "Helvetica-Bold",
                 22
             )
-
-
+        
             c.drawCentredString(
                 page_width / 2,
-                page_height - 90,
+                page_height - 135,
                 "Session Feedback"
             )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # SESSION TITLE
-            # ---------------------------------------------
-
+            # =====================================================
+        
             c.setFont(
                 "Helvetica-Bold",
                 16
             )
-
-
+        
             c.drawCentredString(
                 page_width / 2,
-                page_height - 125,
+                page_height - 170,
                 session_title
             )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # PRESENTER
-            # ---------------------------------------------
-
+            # =====================================================
+        
             c.setFont(
                 "Helvetica",
                 13
             )
-
-
+        
             c.drawCentredString(
                 page_width / 2,
-                page_height - 150,
+                page_height - 195,
                 presenter
             )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # DATE
-            # ---------------------------------------------
-
+            # =====================================================
+        
             if session_date.strip():
-
+        
                 c.setFont(
                     "Helvetica",
                     12
                 )
-
-
+        
                 c.drawCentredString(
                     page_width / 2,
-                    page_height - 172,
+                    page_height - 217,
                     session_date
                 )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # INSTRUCTIONS
-            # ---------------------------------------------
-
+            # =====================================================
+        
             c.setFont(
                 "Helvetica",
                 13
             )
-
-
+        
             c.drawCentredString(
                 page_width / 2,
-                page_height - 215,
-                (
-                    "Please scan the QR code "
-                    "to provide feedback."
-                )
+                page_height - 255,
+                "Please scan the QR code to provide feedback."
             )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # QR CODE
-            # ---------------------------------------------
-
+            # =====================================================
+        
             qr_stream = io.BytesIO(
                 qr_bytes
             )
-
-
+        
             qr_reader = ImageReader(
                 qr_stream
             )
-
-
+        
             qr_size = 250
-
-
+        
             c.drawImage(
                 qr_reader,
-                (
-                    page_width
-                    - qr_size
-                ) / 2,
-                page_height - 500,
+                (page_width - qr_size) / 2,
+                page_height - 540,
                 width=qr_size,
                 height=qr_size,
                 preserveAspectRatio=True
             )
-
-
-            # ---------------------------------------------
+        
+        
+            # =====================================================
             # CLICKABLE LINK
-            # ---------------------------------------------
-
+            # =====================================================
+        
             link_text = (
-                "Click here to open "
-                "the feedback survey"
+                "Click here to open the feedback survey"
             )
-
-
+        
             c.setFont(
                 "Helvetica-Bold",
                 12
             )
-
-
-            link_width = (
-                c.stringWidth(
-                    link_text,
-                    "Helvetica-Bold",
-                    12
-                )
+        
+            link_width = c.stringWidth(
+                link_text,
+                "Helvetica-Bold",
+                12
             )
-
-
+        
             link_x = (
                 page_width
                 - link_width
             ) / 2
-
-
+        
             link_y = (
                 page_height
-                - 535
+                - 575
             )
-
-
+        
             c.drawString(
                 link_x,
                 link_y,
                 link_text
             )
-
-
+        
             c.linkURL(
                 feedback_url,
                 (
@@ -3638,19 +3640,19 @@ elif instrument == "Session Feedback Link Creator":
                 ),
                 relative=0
             )
-
-
+        
+        
+            # =====================================================
+            # FINISH PDF
+            # =====================================================
+        
             c.save()
-
-
+        
             pdf_buffer.seek(
                 0
             )
-
-
-            return (
-                pdf_buffer.getvalue()
-            )
+        
+            return pdf_buffer.getvalue()
 
 
         # =====================================================
