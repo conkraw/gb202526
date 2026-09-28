@@ -1,0 +1,11 @@
+# Reference only: retain your existing working requirements.txt and version pins.
+# The split adds no new third-party dependency.
+streamlit
+pandas
+python-docx
+pytz
+requests
+qrcode[pil]
+cryptography
+reportlab
+openpyxl
